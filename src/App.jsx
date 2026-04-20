@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer, Radar as RadarRecharts, Tooltip } from 'recharts';
-import { MapContainer, TileLayer, CircleMarker, Tooltip as MapTooltip, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import FondoApp from './assets/FondoApp.png';
+
+// IMPORTAMOS LOS ARCHIVOS APARTE
+import Login from './Login';
+import Register from './Register';
 
 // LIBRERÍAS PARA EL PDF
 import jsPDF from 'jspdf';
@@ -24,13 +28,12 @@ const opcionesGiros = {
   "SERVICIOS": ["Consultorio Médico", "Despacho Jurídico", "Agencia Marketing", "Veterinaria", "Gimnasio", "Estética"]
 };
 
-function MapRecenter({ coords }) {
-  const map = useMap();
-  useEffect(() => { if (coords) map.setView(coords, 13); }, [coords, map]);
-  return null;
-}
-
 export default function App() {
+  // --- CONTROL DE NAVEGACIÓN ---
+  // Ahora manejamos: 'app', 'login', 'register'
+  const [view, setView] = useState('app'); 
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
   const [activeTab, setActiveTab] = useState('variables');
   const [municipio, setMunicipio] = useState("GUADALAJARA");
   const [colonia, setColonia] = useState("Colonia Americana");
@@ -55,66 +58,19 @@ export default function App() {
     setTimeout(() => setIsAnalyzing(false), 1500);
   };
 
-  // --- LÓGICA DE GENERACIÓN DEL PDF CORREGIDA ---
   const descargarReporte = () => {
     const doc = new jsPDF();
-    const fecha = new Date().toLocaleDateString('es-ES', { 
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
-    });
-    const refReporte = `JAL-${Math.random().toString(36).substring(7).toUpperCase()}`;
-
     doc.setFont("helvetica", "bold");
     doc.setFontSize(22);
     doc.text("GEOMARKET PREDICTOR", 105, 25, { align: "center" });
     
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text("REPORTE DE INTELIGENCIA TERRITORIAL Y VIABILIDAD COMERCIAL", 105, 32, { align: "center" });
-    doc.text(fecha, 105, 38, { align: "center" });
-    doc.text(`Ref: ${refReporte}`, 105, 44, { align: "center" });
-
-    doc.setFont("helvetica", "bold");
-    doc.text("PARÁMETROS DEL ANÁLISIS", 20, 55);
-    
-    // AQUÍ ESTABA EL ERROR: Se agregaron los valores de fillColor [R, G, B]
     doc.autoTable({
       startY: 60,
       head: [['MUNICIPIO', 'SUB-GIRO', 'CATEGORÍA', 'ZONA (COLONIA)']],
       body: [[municipio, subGiro, giro, colonia]],
       theme: 'grid',
-      headStyles: { fillColor: [30, 41], halign: 'center' },
+      headStyles: { fillColor:2, halign: 'center' },
       styles: { fontSize: 9, halign: 'center' }
-    });
-
-    const finalY = doc.lastAutoTable.finalY + 15;
-    doc.setFontSize(12);
-    doc.text("ÍNDICE DE VIABILIDAD (ISO)", 105, finalY, { align: "center" });
-    doc.setFontSize(45);
-    doc.setTextColor(20, 184, 166); 
-    doc.text(`${ISO_VAL}%`, 105, finalY + 18, { align: "center" });
-    
-    doc.setTextColor(0);
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.text("DICTAMEN DEL CONSULTOR VIRTUAL", 20, finalY + 45);
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(10);
-    const dictamen = `El análisis en ${colonia} revela un mercado de ${subGiro} con un ISO de ${ISO_VAL}%. Se detecta una alta exposición orgánica y un flujo de movilidad del ${movilidad}%. El proyecto se considera viable bajo un modelo de consumo para nivel socioeconómico ${target}.`;
-    const splitDictamen = doc.splitTextToSize(dictamen, 170);
-    doc.text(splitDictamen, 20, finalY + 52);
-
-    doc.setFont("helvetica", "bold");
-    doc.text("MATRIZ DE RIESGO Y OPORTUNIDAD", 20, finalY + 80);
-    doc.autoTable({
-      startY: finalY + 85,
-      head: [['FACTORES DE CRECIMIENTO', 'ANÁLISIS DE RESISTENCIA']],
-      body: [
-        [`• Movilidad: ${movilidad}%\n• Alta exposición orgánica detectada.`, 
-         `• Saturación: ${saturacion}%\n• Baja fricción competitiva actual.`]
-      ],
-      theme: 'plain',
-      styles: { fontSize: 9, cellPadding: 5 },
-      headStyles: { textColor: [20] }
     });
 
     doc.save(`Reporte_ISO_${colonia}.pdf`);
@@ -127,6 +83,26 @@ export default function App() {
     { subject: 'ISO', A: ISO_VAL },
   ];
 
+  // --- LÓGICA DE RUTEO ---
+  if (view === 'login') {
+    return (
+      <Login 
+        onLogin={() => { setIsLoggedIn(true); setView('app'); }} 
+        onBack={() => setView('app')} 
+        onGoToRegister={() => setView('register')}
+      />
+    );
+  }
+
+  if (view === 'register') {
+    return (
+      <Register 
+        onBack={() => setView('login')} 
+        onRegisterSuccess={() => { setIsLoggedIn(true); setView('app'); }} 
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col items-center p-4 md:p-10 font-sans bg-cover bg-fixed bg-center" style={{ backgroundImage: `url(${FondoApp})` }}>
       
@@ -137,13 +113,30 @@ export default function App() {
           </h1>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.3em] mt-1.5 ml-0.5">Reporte de Inteligencia Territorial</p>
         </div>
-        <div className="bg-teal-500 text-white px-8 py-3 rounded-2xl font-black text-xl shadow-[0_10px_20px_rgba(20,184,166,0.3)]">
-          ISO: {ISO_VAL}%
+
+        <div className="flex items-center gap-6">
+          {!isLoggedIn ? (
+            <button 
+              onClick={() => setView('login')}
+              className="text-[11px] font-black text-slate-500 uppercase tracking-widest hover:text-teal-600 transition-colors"
+            >
+              Iniciar Sesión
+            </button>
+          ) : (
+            <button 
+              onClick={() => setIsLoggedIn(false)}
+              className="text-[10px] font-black text-rose-400 uppercase tracking-widest hover:text-rose-600 transition-colors border border-rose-100 px-4 py-2 rounded-full"
+            >
+              Salir
+            </button>
+          )}
+          <div className="bg-teal-500 text-white px-8 py-3 rounded-2xl font-black text-xl shadow-[0_10px_20px_rgba(20,184,166,0.3)]">
+            ISO: {ISO_VAL}%
+          </div>
         </div>
       </header>
 
-      <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-8 items-start">
-        
+      <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-8 items-start animate-in fade-in duration-500">
         <aside className="bg-white/95 backdrop-blur-sm p-8 rounded-[3.5rem] shadow-2xl border border-white space-y-8">
           <section className="space-y-4">
             <h2 className="text-[11px] font-black uppercase text-teal-600 tracking-widest italic">📍 CONFIGURACIÓN</h2>
@@ -198,7 +191,6 @@ export default function App() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <AnalisisCard title="Estatus" value="Óptimo" sub="Alta Probabilidad" color="teal" />
                   <AnalisisCard title="Ticket" value="$250 - $450" sub="Estimado" color="orange" />
-                  
                   <button onClick={descargarReporte} className="bg-teal-50 hover:bg-teal-100 border border-teal-200 p-6 rounded-[2.5rem] flex flex-col items-center justify-center transition-all group active:scale-95 shadow-sm">
                     <span className="text-[24px] mb-1 group-hover:scale-110 transition-transform">📄</span>
                     <p className="text-[10px] font-black text-teal-700 uppercase tracking-widest leading-none">PDF</p>
@@ -214,12 +206,8 @@ export default function App() {
                   <div key={i} className="flex justify-between items-center p-6 bg-slate-50 rounded-[2.5rem] border border-white shadow-sm">
                     <div className="flex items-center gap-6">
                       <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center font-black text-teal-600 shadow-sm border border-slate-100">{i + 1}</div>
-                      <div>
-                        <p className="font-black text-slate-800 text-sm uppercase">{item}</p>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-wider italic">📍 Aprox. 1.2 km</p>
-                      </div>
+                      <div><p className="font-black text-slate-800 text-sm uppercase">{item}</p></div>
                     </div>
-                    <div className="text-teal-500 font-black text-xs bg-white px-4 py-2 rounded-full shadow-sm border border-slate-100">★★★☆☆</div>
                   </div>
                 ))}
               </div>
@@ -244,6 +232,7 @@ export default function App() {
   );
 }
 
+// --- COMPONENTES AUXILIARES ---
 function AnalisisCard({ title, value, sub, color }) {
   return (
     <div className="bg-slate-50/50 p-6 rounded-[2.5rem] border border-white shadow-sm flex flex-col justify-center">
