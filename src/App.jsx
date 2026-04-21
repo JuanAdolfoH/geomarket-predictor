@@ -30,7 +30,6 @@ const opcionesGiros = {
 
 export default function App() {
   // --- CONTROL DE NAVEGACIÓN ---
-  // Ahora manejamos: 'app', 'login', 'register'
   const [view, setView] = useState('app'); 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
@@ -59,6 +58,11 @@ export default function App() {
   };
 
   const descargarReporte = () => {
+    // Si no está logueado, lo mandamos a login para que se registre/entre
+    if (!isLoggedIn) {
+      setView('login');
+      return;
+    }
     const doc = new jsPDF();
     doc.setFont("helvetica", "bold");
     doc.setFontSize(22);
@@ -120,15 +124,18 @@ export default function App() {
               onClick={() => setView('login')}
               className="text-[11px] font-black text-slate-500 uppercase tracking-widest hover:text-teal-600 transition-colors"
             >
-              Iniciar Sesión
+              Acceso Clientes
             </button>
           ) : (
-            <button 
-              onClick={() => setIsLoggedIn(false)}
-              className="text-[10px] font-black text-rose-400 uppercase tracking-widest hover:text-rose-600 transition-colors border border-rose-100 px-4 py-2 rounded-full"
-            >
-              Salir
-            </button>
+            <div className="flex items-center gap-4">
+               <span className="text-[10px] font-black text-teal-600 bg-teal-50 px-3 py-1 rounded-full uppercase tracking-widest">Premium</span>
+               <button 
+                onClick={() => setIsLoggedIn(false)}
+                className="text-[10px] font-black text-rose-400 uppercase tracking-widest hover:text-rose-600 transition-colors"
+              >
+                Salir
+              </button>
+            </div>
           )}
           <div className="bg-teal-500 text-white px-8 py-3 rounded-2xl font-black text-xl shadow-[0_10px_20px_rgba(20,184,166,0.3)]">
             ISO: {ISO_VAL}%
@@ -191,10 +198,14 @@ export default function App() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <AnalisisCard title="Estatus" value="Óptimo" sub="Alta Probabilidad" color="teal" />
                   <AnalisisCard title="Ticket" value="$250 - $450" sub="Estimado" color="orange" />
+                  
+                  {/* BOTÓN PDF DINÁMICO */}
                   <button onClick={descargarReporte} className="bg-teal-50 hover:bg-teal-100 border border-teal-200 p-6 rounded-[2.5rem] flex flex-col items-center justify-center transition-all group active:scale-95 shadow-sm">
-                    <span className="text-[24px] mb-1 group-hover:scale-110 transition-transform">📄</span>
+                    <span className="text-[24px] mb-1 group-hover:scale-110 transition-transform">{isLoggedIn ? "📄" : "🔒"}</span>
                     <p className="text-[10px] font-black text-teal-700 uppercase tracking-widest leading-none">PDF</p>
-                    <p className="text-[8px] font-bold text-teal-600/60 uppercase mt-1">Descargar ISO</p>
+                    <p className="text-[8px] font-bold text-teal-600/60 uppercase mt-1">
+                      {isLoggedIn ? "Descargar ISO" : "Regístrate para bajar"}
+                    </p>
                   </button>
                 </div>
               </div>
@@ -232,7 +243,7 @@ export default function App() {
   );
 }
 
-// --- COMPONENTES AUXILIARES ---
+// Componentes auxiliares (AnalisisCard, SelectBox, Slider) se mantienen iguales abajo...
 function AnalisisCard({ title, value, sub, color }) {
   return (
     <div className="bg-slate-50/50 p-6 rounded-[2.5rem] border border-white shadow-sm flex flex-col justify-center">
