@@ -60,3 +60,21 @@
     filter: none !important;
   }
 }
+@keyframes scanner {
+  0% { top: 0%; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+.scanner-line{
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 5px;
+  background: linear-gradient(to right, transparent, #14b8a6, transparent);
+  box-shadow: 0 0 20px #14b8a6, 0 0 10px white;
+  z-index: 9999 !important;
+  pointer-events: none;
+  animation: scanner 2.5s linear infinite;
+}
