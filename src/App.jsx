@@ -149,7 +149,7 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState('variables');
   const [municipio, setMunicipio] = useState("GUADALAJARA");
-  const [colonia, setColonia] = useState("Colonia Americana");
+  const [colonia, setColonia] = useState("Americana");
   const [giro, setGiro] = useState("GASTRONOMÍA");
   const [subGiro, setSubGiro] = useState("Restaurante");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -168,9 +168,17 @@ export default function App() {
 
   const reportRef = useRef();
 
-  useEffect(() => { if (datosJalisco[municipio]) setColonia(datosJalisco[municipio]); }, [municipio]);
-  useEffect(() => { if (opcionesGiros[giro]) setSubGiro(opcionesGiros[giro]); }, [giro]);
+  useEffect(() => {
+  if (datosJalisco[municipio]) {
+    setColonia(datosJalisco[municipio][0]);
+  }
+}, [municipio]);
 
+useEffect(() => {
+  if (opcionesGiros[giro]) {
+    setSubGiro(opcionesGiros[giro][0]);
+  }
+}, [giro]);
   const ISO_VAL = 77.5; 
 
   const handleAudit = () => {
