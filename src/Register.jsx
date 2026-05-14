@@ -1,23 +1,70 @@
-import React from 'react';
+import React, { useState } from 'react';
 import FondoApp from './assets/FondoApp.png';
 
-const Register = ({ onBack, onRegisterSuccess }) => {
+const Register = ({ onBack }) => {
+  // 1. Estado para capturar los datos del formulario
+  const [formData, setFormData] = useState({
+    nombre: '',
+    email: '',
+    telefono: '',
+    password: ''
+  });
+
+  // 2. Manejador de cambios en los inputs
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    });
+  };
+
+  // 3. Función para enviar los datos al Backend
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    console.log("Intentando registrar a:", formData.email); // Para depuración en consola
+
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          nombre: formData.nombre,
+          email: formData.email,
+          telefono: formData.telefono,
+          password: formData.password
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert("✅ Usuario registrado con éxito en la base de datos.");
+        onBack(); // Regresa al login automáticamente
+      } else {
+        alert("❌ Error: " + (data.msg || "No se pudo registrar"));
+      }
+    } catch (error) {
+      console.error("Error en el registro:", error);
+      alert("📡 No hay conexión con el servidor. Verifica que el Backend esté encendido en la terminal.");
+    }
+  };
+
   return (
     <div className="min-h-screen w-full flex bg-white font-sans overflow-hidden">
       
-      {/* --- COLUMNA IZQUIERDA: Visual Insight (Mapa de Calor + Radar) --- */}
+      {/* --- COLUMNA IZQUIERDA: Visual Insight --- */}
       <div 
         className="hidden lg:flex lg:w-3/5 bg-cover bg-center relative items-center justify-center p-20 overflow-hidden"
         style={{ backgroundImage: `url(${FondoApp})` }}
       >
-        {/* Overlay con gradiente Teal Profundo */}
+        {/* Overlays de diseño */}
         <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-teal-900/95 to-teal-800/90"></div>
-        
-        {/* EFECTO RADAR PARPADEANTE (Identidad de marca) */}
         <div className="absolute w-[700px] h-[700px] border border-teal-500/10 rounded-full animate-ping duration-[5000ms]"></div>
         <div className="absolute w-[450px] h-[450px] border border-teal-400/20 rounded-full animate-pulse"></div>
 
-        {/* CONTENIDO FLOTANTE CREATIVO */}
+        {/* Contenido decorativo */}
         <div className="relative z-10 w-full max-w-2xl">
           <div className="inline-block px-4 py-1.5 bg-emerald-500/20 backdrop-blur-md border border-emerald-400/30 rounded-full mb-8">
             <span className="text-emerald-300 text-[10px] font-black uppercase tracking-[0.4em]">Inicia tu Expansión</span>
@@ -28,20 +75,17 @@ const Register = ({ onBack, onRegisterSuccess }) => {
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-300 text-8xl">RED ELITE</span>
           </h1>
 
-          {/* Gráfica Flotante: Mapa de Calor Simulado */}
           <div className="relative animate-in fade-in zoom-in duration-1000 delay-300">
             <div className="bg-white/10 backdrop-blur-2xl border border-white/20 p-8 rounded-[3rem] w-80 shadow-2xl transform -rotate-3 hover:rotate-0 transition-all duration-500">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-3 h-3 bg-rose-500 rounded-full animate-ping"></div>
                 <span className="text-[10px] font-black text-white uppercase tracking-widest">Zona de Alta Demanda</span>
               </div>
-              
-              {/* Simulación de Heatmap */}
               <div className="grid grid-cols-4 gap-2">
                 {[...Array(12)].map((_, i) => (
                   <div 
                     key={i} 
-                    className={`h-8 rounded-lg animate-pulse`} 
+                    className="h-8 rounded-lg animate-pulse" 
                     style={{ 
                       backgroundColor: i % 3 === 0 ? '#14b8a6' : i % 2 === 0 ? '#0f766e' : '#134e4a',
                       opacity: Math.random() * 0.7 + 0.3 
@@ -51,19 +95,12 @@ const Register = ({ onBack, onRegisterSuccess }) => {
               </div>
               <p className="text-teal-200 text-[9px] mt-6 font-bold uppercase tracking-tighter italic">Analizando flujos comerciales en tiempo real...</p>
             </div>
-            
-            {/* Pequeña métrica adicional */}
-            <div className="absolute -bottom-6 -right-12 bg-teal-500 p-5 rounded-3xl shadow-xl transform rotate-12">
-              <span className="text-white font-black text-2xl">+25k</span>
-              <p className="text-white/80 text-[8px] font-bold uppercase">Puntos de Interés</p>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* --- COLUMNA DERECHA: Formulario de Registro --- */}
+      {/* --- COLUMNA DERECHA: Formulario --- */}
       <div className="w-full lg:w-2/5 flex items-center justify-center p-8 md:p-12 bg-white relative overflow-y-auto">
-        
         <div className="w-full max-w-sm space-y-10 py-10">
           
           <div className="space-y-2 text-center lg:text-left">
@@ -71,22 +108,30 @@ const Register = ({ onBack, onRegisterSuccess }) => {
             <p className="text-slate-400 font-medium">Crea tu cuenta corporativa y empieza a predecir.</p>
           </div>
 
-          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); onRegisterSuccess(); }}>
+          <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 gap-4">
+              {/* Input Nombre */}
               <div className="group space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 transition-colors group-focus-within:text-teal-600">Nombre Completo</label>
                 <input 
                   type="text" 
+                  name="nombre"
+                  value={formData.nombre}
+                  onChange={handleChange}
                   placeholder="Ej: Juan Pérez" 
                   className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[12px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-teal-500/10 transition-all" 
                   required 
                 />
               </div>
 
+              {/* Input Email */}
               <div className="group space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 transition-colors group-focus-within:text-teal-600">Correo electronico</label>
                 <input 
                   type="email" 
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
                   placeholder="juan@empresa.com" 
                   className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[12px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-teal-500/10 transition-all" 
                   required 
@@ -94,19 +139,27 @@ const Register = ({ onBack, onRegisterSuccess }) => {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
+                {/* Input Teléfono */}
                 <div className="group space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 transition-colors group-focus-within:text-teal-600">Teléfono</label>
                   <input 
                     type="tel" 
+                    name="telefono"
+                    value={formData.telefono}
+                    onChange={handleChange}
                     placeholder="33..." 
                     className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[12px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-teal-500/10 transition-all" 
                     required 
                   />
                 </div>
+                {/* Input Password */}
                 <div className="group space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 transition-colors group-focus-within:text-teal-600">Password</label>
                   <input 
                     type="password" 
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
                     placeholder="••••••" 
                     className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[12px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-teal-500/10 transition-all" 
                     required 
