@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
 import FondoApp from './assets/FondoApp.png';
+import { toast } from 'react-hot-toast';
+import { auth, db } from './firebase'; 
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore'; 
 
 const Register = ({ onBack }) => {
-  // 1. Estado para capturar los datos del formulario
+  // Estado para capturar los datos del formulario
   const [formData, setFormData] = useState({
     nombre: '',
     email: '',
@@ -10,7 +14,7 @@ const Register = ({ onBack }) => {
     password: ''
   });
 
-  // 2. Manejador de cambios en los inputs
+  // Manejador de cambios en los inputs
   const handleChange = (e) => {
     setFormData({
       ...formData,
@@ -18,36 +22,44 @@ const Register = ({ onBack }) => {
     });
   };
 
-  // 3. Función para enviar los datos al Backend
+  // 2. Función de registro adaptada para Firebase
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log("Intentando registrar a:", formData.email); // Para depuración en consola
+    console.log("Intentando registrar en Firebase a:", formData.email);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          nombre: formData.nombre,
-          email: formData.email,
-          telefono: formData.telefono,
-          password: formData.password
-        }),
+      // Paso A: Crear el usuario en el sistema de Autenticación de Firebase
+      const userCredential = await createUserWithEmailAndPassword(
+        auth, 
+        formData.email, 
+        formData.password
+      );
+      const user = userCredential.user;
+
+      // Paso B: Guardar los datos extra (Nombre y Teléfono) en Firestore Database usando el UID único
+      await setDoc(doc(db, "users", user.uid), {
+        nombre: formData.nombre,
+        email: formData.email,
+        telefono: formData.telefono,
+        createdAt: new Date()
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        alert("✅ Usuario registrado con éxito en la base de datos.");
-        onBack(); // Regresa al login automáticamente
-      } else {
-        alert("❌ Error: " + (data.msg || "No se pudo registrar"));
-      }
+      toast.success("!Usuario creado con exito")
+      onBack(); // Te regresa automáticamente al Login
+      
     } catch (error) {
-      console.error("Error en el registro:", error);
-      alert("📡 No hay conexión con el servidor. Verifica que el Backend esté encendido en la terminal.");
+      console.error("Error detectado en el proceso:", error.code);
+      
+      // Control de errores comunes de Firebase
+      if (error.code === 'auth/email-already-in-use') {
+        alert("❌ Este correo electrónico ya está registrado.");
+      } else if (error.code === 'auth/weak-password') {
+        alert("❌ La contraseña debe tener mínimo 6 caracteres.");
+      } else if (error.code === 'auth/invalid-email') {
+        alert("❌ El formato del correo electrónico no es válido.");
+      } else {
+        alert("❌ Error: " + error.message);
+      }
     }
   };
 
@@ -59,12 +71,10 @@ const Register = ({ onBack }) => {
         className="hidden lg:flex lg:w-3/5 bg-cover bg-center relative items-center justify-center p-20 overflow-hidden"
         style={{ backgroundImage: `url(${FondoApp})` }}
       >
-        {/* Overlays de diseño */}
         <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-teal-900/95 to-teal-800/90"></div>
         <div className="absolute w-[700px] h-[700px] border border-teal-500/10 rounded-full animate-ping duration-[5000ms]"></div>
         <div className="absolute w-[450px] h-[450px] border border-teal-400/20 rounded-full animate-pulse"></div>
 
-        {/* Contenido decorativo */}
         <div className="relative z-10 w-full max-w-2xl">
           <div className="inline-block px-4 py-1.5 bg-emerald-500/20 backdrop-blur-md border border-emerald-400/30 rounded-full mb-8">
             <span className="text-emerald-300 text-[10px] font-black uppercase tracking-[0.4em]">Inicia tu Expansión</span>

@@ -1,146 +1,154 @@
 import React, { useState, useEffect, useRef } from 'react';
+// Componentes para Gráficos e Indicadores (Recharts)
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer, Radar as RadarRecharts, Tooltip } from 'recharts';
+// Componentes para el Mapa Geográfico (React Leaflet)
 import { MapContainer, TileLayer, CircleMarker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+// Recursos de Diseño y Notificaciones Visuales
 import FondoApp from './assets/FondoApp.png';
-
+import { Toaster } from 'react-hot-toast';
+// Vistas de Control de Acceso de Usuarios
 import Login from './Login';
 import Register from './Register';
+// Librerías para Renderizado y Descarga de Reportes PDF
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+// Motores del Algoritmo e Inteligencia de Negocios de Jalisco
+import { analizarZonaJalisco } from './services/marketAnalysis';
+import { sembrarDatosJalisco } from './services/seedJalisco';
 
 const datosJalisco = {
-"ACATIC": ["Centro", "Tierras Coloradas", "La Joya", "El Refugio"],
-"ACATLÁN DE JUÁREZ": ["Centro", "Resolana", "Bellavista", "El Plan"],
-"AHUALULCO DE MERCADO": ["Centro", "La Estación", "Crezcamos Juntos", "La Esperanza"],
-"AMACUECA": ["Centro", "Tepec", "La Cofradía"],
-"AMATITÁN": ["Centro", "El Malecón", "La Villa", "Santa Rita"],
-"AMECA": ["Centro", "La Villita", "El Rosario", "Cardenismo", "Hacienda de la Esperanza"],
-"ARANDAS": ["Centro", "Santa Bárbara", "Mexiquito", "La Gloria", "Gabilondo"],
-"ARENAL (EL)": ["Centro", "Santa Cruz", "Huaxtla", "La Presa"],
-"ATEMAJAC DE BRIZUELA": ["Centro", "La Estancia", "San Juanito"],
-"ATENGO": ["Centro", "Soyatlán", "Agua Caliente"],
-"ATENGUILLO": ["Centro", "Los Volcanes", "San Antonio"],
-"ATOTONILCO EL ALTO": ["Centro", "San Felipe", "La Loma", "Infonavit", "Los Sabinos"],
-"ATOYAC": ["Centro", "Cuyacapan", "Unión de Guadalupe"],
-"AUTLÁN DE NAVARRO": ["Centro", "Las Montañas", "Colinas del Sur", "La Alameda", "Echeverría"],
-"AYOTLÁN": ["Centro", "La Ribera", "Santa Rita"],
-"AYUTLA": ["Centro", "San Miguel", "La Resolana"],
-"BOLAÑOS": ["Centro", "Tuxpan de Bolaños", "Chimaltitán"],
-"CABO CORRIENTES": ["El Tuito", "Yelapa", "Las Juntas y los Veranos", "Chacala"],
-"CAÑADAS DE OBREGÓN": ["Centro", "Temacapulín", "San Isidro"],
-"CASIMIRO CASTILLO": ["La Resolana", "Lo Arado", "Coyame"],
-"CHAPALA": ["Centro", "Ajijic", "San Antonio Tlayacapan", "Santa Cruz de la Soledad", "Riberas del Pilar"],
-"CHIMALTITÁN": ["Centro", "San Juan de los Potreros"],
-"CHIQUILISTLÁN": ["Centro", "Churintzio", "Tapalpa"],
-"CIHUATLÁN": ["Centro", "Barra de Navidad", "Melaque", "Jaluco", "San Patricio"],
-"COCULA": ["Centro", "San Juan de los Arcos", "La Sauceda"],
-"COLOTLÁN": ["Centro", "Barrio de Soyatitlán", "La Esperanza"],
-"CONCEPCIÓN DE BUENOS AIRES": ["Centro", "La Manzanilla", "El Paso"],
-"CUAUTITÁN DE GARCÍA BARRAGÁN": ["Centro", "Chacala", "Telcruz"],
-"CUAUTLA": ["Centro", "San Juan de los Arcos"],
-"CUQUÍO": ["Centro", "Lázaro Cárdenas", "Teponahuasco"],
-"DEGOLLADO": ["Centro", "Huáscato", "La Orilla"],
-"EJUTLA": ["Centro", "San Lorenzo"],
-"EL GRULLO": ["Centro", "Pueblo Nuevo", "La Ladrillera"],
-"EL LIMÓN": ["Centro", "San Juan de Amula"],
-"EL SALTO": ["Centro", "Las Pintas", "San José del Castillo", "El Quince", "Potrero del Río"],
-"ENCARNACIÓN DE DÍAZ": ["Centro", "La Chona", "San Sebastián", "Barrio Alto"],
-"ETZATLÁN": ["Centro", "La Alcantarilla", "Palo Verde"],
-"GÓMEZ FARÍAS": ["San Sebastián del Sur", "La Cofradía"],
-"GUACHINANGO": ["Centro", "La Estanzuela"],
-"GUADALAJARA": ["Americana", "Santa Tere", "Providencia", "Centro", "Ladrón de Guevara", "Oblatos", "Huentitán", "Jardines del Bosque", "Polanco", "Miravalle"],
-"HOSTOTIPAQUILLO": ["Centro", "La Taberna", "Santo Domingo"],
-"HUEJÚCAR": ["Centro", "Tenzompa"],
-"HUEJUQUILLA EL ALTO": ["Centro", "Tenzompa", "La Soledad"],
-"IXTLAHUACÁN DE LOS MEMBRILLOS": ["Centro", "Olipilla", "Atequiza", "El Rodeo"],
-"IXTLAHUACÁN DEL RÍO": ["Centro", "Masueco", "San Antonio"],
-"JALOSTOTITLÁN": ["Centro", "Santa Ana de Guadalupe", "La Mezcalera"],
-"JAMAY": ["Centro", "San Miguel", "La Capilla"],
-"JESÚS MARÍA": ["Centro", "Josefino de Allende"],
-"JILOTLÁN DE LOS DOLORES": ["Centro", "Las Lomas"],
-"JOCOTEPEC": ["Centro", "San Juan Cosalá", "Zapotitán de Hidalgo", "El Chante"],
-"JUANACATLÁN": ["Centro", "El Mirador", "Villas de Andalucía"],
-"JUCHITLÁN": ["Centro", "San José de los Guajes"],
-"LAGOS DE MORENO": ["Centro", "La Aurora", "Paseos de la Montaña", "Cristeros", "Cañada de Ricos"],
-"MAGDALENA": ["Centro", "La Joya", "San Andrés"],
-"MASCOTA": ["Centro", "Navidad", "Galope"],
-"MAZAMITLA": ["Centro", "La Toscana", "Los Cerezos", "Monteverde"],
-"MEXTICACÁN": ["Centro", "Cañada de Islas"],
-"MEZQUITIC": ["Centro", "San Andrés Cohamiata", "San Sebastián Teponahuaxtlán"],
-"MIXTLÁN": ["Centro", "Cuyutlán"],
-"OCOTLÁN": ["Centro", "San Juan", "Lázaro Cárdenas", "Paso Blanco"],
-"OJUELOS DE JALISCO": ["Centro", "Matancillas", "Chinampas"],
-"PIHUAMO": ["Centro", "La Estrella", "El Naranjo"],
-"PONCITLÁN": ["Centro", "Mezcala", "Cuitzeo", "San Pedro Itzicán"],
-"PUERTO VALLARTA": ["Marina Vallarta", "Olas Altas", "Conchas Chinas", "Versalles", "Pitillal", "Zona Romántica", "Cinco de Diciembre", "Fluvial"],
-"QUITUPAN": ["Centro", "San Diego", "Lázaro Cárdenas"],
-"SAN CRISTÓBAL DE LA BARRANCA": ["Centro", "La Lobera"],
-"SAN DIEGO DE ALEJANDRÍA": ["Centro", "La Presita"],
-"SAN GABRIEL": ["Centro", "Apango", "Jiquilpan"],
-"SAN IGNACIO CERRO GORDO": ["Centro", "La Granjena"],
-"SAN JUAN DE LOS LAGOS": ["Centro", "Sangre de Cristo", "Lomas del Calvario", "Espíritu Santo"],
-"SAN JUANITO DE ESCOBEDO": ["Centro", "Estancia de Ayllón"],
-"SAN JULIÁN": ["Centro", "Las Cruces"],
-"SAN MARCOS": ["Centro", "San José de los Conchos"],
-"SAN MARTÍN DE BOLAÑOS": ["Centro", "Mesa del Tirador"],
-"SAN MARTÍN HIDALGO": ["Centro", "El Salitre", "Santa Cruz de las Flores"],
-"SAN MIGUEL EL ALTO": ["Centro", "San José de los Reynoso", "Mirandillas"],
-"SAN SEBASTIÁN DEL OESTE": ["Centro", "San Felipe de Híjar", "La Estancia"],
-"SANTA MARÍA DE LOS ÁNGELES": ["Centro", "Huacasco"],
-"SANTA MARÍA DEL ORO": ["Centro", "Manuel M. Diéguez"],
-"SAYULA": ["Centro", "Usmajac", "La Cuesta"],
-"TALA": ["Centro", "Ruiseñores", "Ahuisculco", "El Refugio"],
-"TALPA DE ALLENDE": ["Centro", "Ocotes", "La Cuesta"],
-"TAMAZULA DE GORDIANO": ["Centro", "Vista Hermosa", "La Garita", "Soyatlán"],
-"TAPALPA": ["Centro", "Ferrería de Tula", "San Francisco"],
-"TECALITLÁN": ["Centro", "La Purísima", "Ahuijullo"],
-"TECOLOTLÁN": ["Centro", "Quila", "Tamazulita"],
-"TENAMAXTLÁN": ["Centro", "Miravalle"],
-"TEOCALTICHE": ["Centro", "Mechoacanejo", "Belén del Refugio"],
-"TEOCUITATLÁN DE CORONA": ["Centro", "Citala", "Puerta de Citala"],
-"TEPATITLÁN DE MORELOS": ["Centro", "Popotes", "Jardines de Tepa", "Capilla de Guadalupe", "San José de Gracia"],
-"TEQUILA": ["Centro", "La Higuerita", "El Salvador", "Santa Teresa"],
-"TEUCHITLÁN": ["Centro", "La Labor de Rivera"],
-"TIZAPÁN EL ALTO": ["Centro", "El Volantín", "Mismaloya"],
-"TLAJOMULCO DE ZÚÑIGA": ["Santa Fe", "San Agustín", "La Rioja", "El Punto", "Solares", "San Sebastián", "El Palomar", "Hacienda Santa Fe"],
-"TLAQUEPAQUE": ["Centro Histórico", "Alamo Industrial", "Lomas de Tlaquepaque", "Tlaquepaque Park", "Miravalle", "Cerro del Cuatro", "Santa Anita", "Parques de Santa Cruz"],
-"TOLIMÁN": ["Centro", "Copala"],
-"TOMATLÁN": ["Centro", "Pino Suárez", "La Cumbre", "Campo Acosta"],
-"TONALÁ": ["Loma Dorada", "Centro", "Colinas de Tonalá", "Ciudad Aztlán", "Jauja", "Santa Cruz de las Huertas", "El Rosario", "Alamedas"],
-"TONAYA": ["Centro", "Apulco"],
-"TONILA": ["Centro", "San Marcos", "La Esperanza"],
-"TOTATICHE": ["Centro", "Temastián"],
-"TOTOTLÁN": ["Centro", "San Isidro"],
-"TUXCACUESCO": ["Centro", "San Antonio"],
-"TUXCUECA": ["Centro", "San Luis Soyatlán"],
-"TUXPAN": ["Centro", "Pueblo Nuevo", "Talpitas"],
-"UNIÓN DE SAN ANTONIO": ["Centro", "Tlacuitapa"],
-"UNIÓN DE TULA": ["Centro", "San José de las Flores"],
-"VALLE DE GUADALUPE": ["Centro", "Villa de Ornelas"],
-"VALLE DE JUÁREZ": ["Centro", "Paso de la Carretera"],
-"VILLA CORONA": ["Centro", "Atotonilco el Bajo", "Estipac"],
-"VILLA GUERRERO": ["Centro", "Azqueltán"],
-"VILLA HIDALGO": ["Centro", "Paso de la Carretera"],
-"VILLA PURIFICACIÓN": ["Centro", "Jirosto"],
-"YAHUALICA DE GONZÁLEZ GALLO": ["Centro", "Manalisco", "Huisquilco"],
-"ZACOALCO DE TORRES": ["Centro", "Barranca de Otates", "General Andrés Figueroa"],
-"ZAPOPAN": ["Puerta de Hierro", "Real de Valdepeñas", "Ciudad del Sol", "Tabachines", "Bugambilias", "Arcos de Zapopan", "Valle Real", "La Constitución"],
-"ZAPOTILTIC": ["Centro", "El Rincón", "Huescalapa"],
-"ZAPOTITLÁN DE VADILLO": ["Centro", "San José del Carmen"],
-"ZAPOTLÁN DEL REY": ["Centro", "Santiago Totolimichán"],
-"ZAPOTLÁN EL GRANDE": ["Centro", "Ciudad Guzmán", "Colinas de la Montaña", "Constituyentes"],
-"ZAPOTLANEJO": ["Centro", "La Purísima", "Matatlán", "Santa Fe"]
+  "ACATIC": ["Centro", "Tierras Coloradas", "La Joya", "El Refugio"],
+  "ACATLÁN DE JUÁREZ": ["Centro", "Resolana", "Bellavista", "El Plan"],
+  "AHUALULCO DE MERCADO": ["Centro", "La Estación", "Crezcamos Juntos", "La Esperanza"],
+  "AMACUECA": ["Centro", "Tepec", "La Cofradía"],
+  "AMATITÁN": ["Centro", "El Malecón", "La Villa", "Santa Rita"],
+  "AMECA": ["Centro", "La Villita", "El Rosario", "Cardenismo", "Hacienda de la Esperanza"],
+  "ARANDAS": ["Centro", "Santa Bárbara", "Mexiquito", "La Gloria", "Gabilondo"],
+  "ARENAL (EL)": ["Centro", "Santa Cruz", "Huaxtla", "La Presa"],
+  "ATEMAJAC DE BRIZUELA": ["Centro", "La Estancia", "San Juanito"],
+  "ATENGO": ["Centro", "Soyatlán", "Agua Caliente"],
+  "ATENGUILLO": ["Centro", "Los Volcanes", "San Antonio"],
+  "ATOTONILCO EL ALTO": ["Centro", "San Felipe", "La Loma", "Infonavit", "Los Sabinos"],
+  "ATOYAC": ["Centro", "Cuyacapan", "Unión de Guadalupe"],
+  "AUTLÁN DE NAVARRO": ["Centro", "Las Montañas", "Colinas del Sur", "La Alameda", "Echeverría"],
+  "AYOTLÁN": ["Centro", "La Ribera", "Santa Rita"],
+  "AYUTLA": ["Centro", "San Miguel", "La Resolana"],
+  "BOLAÑOS": ["Centro", "Tuxpan de Bolaños", "Chimaltitán"],
+  "CABO CORRIENTES": ["El Tuito", "Yelapa", "Las Juntas y los Veranos", "Chacala"],
+  "CAÑADAS DE OBREGÓN": ["Centro", "Temacapulín", "San Isidro"],
+  "CASIMIRO CASTILLO": ["La Resolana", "Lo Arado", "Coyame"],
+  "CHAPALA": ["Centro", "Ajijic", "San Antonio Tlayacapan", "Santa Cruz de la Soledad", "Riberas del Pilar"],
+  "CHIMALTITÁN": ["Centro", "San Juan de los Potreros"],
+  "CHIQUILISTLÁN": ["Centro", "Churintzio", "Tapalpa"],
+  "CIHUATLÁN": ["Centro", "Barra de Navidad", "Melaque", "Jaluco", "San Patricio"],
+  "COCULA": ["Centro", "San Juan de los Arcos", "La Sauceda"],
+  "COLOTLÁN": ["Centro", "Barrio de Soyatitlán", "La Esperanza"],
+  "CONCEPCIÓN DE BUENOS AIRES": ["Centro", "La Manzanilla", "El Paso"],
+  "CUAUTITÁN DE GARCÍA BARRAGÁN": ["Centro", "Chacala", "Telcruz"],
+  "CUAUTLA": ["Centro", "San Juan de los Arcos"],
+  "CUQUÍO": ["Centro", "Lázaro Cárdenas", "Teponahuasco"],
+  "DEGOLLADO": ["Centro", "Huáscato", "La Orilla"],
+  "EJUTLA": ["Centro", "San Lorenzo"],
+  "EL GRULLO": ["Centro", "Pueblo Nuevo", "La Ladrillera"],
+  "EL LIMÓN": ["Centro", "San Juan de Amula"],
+  "EL SALTO": ["Centro", "Las Pintas", "San José del Castillo", "El Quince", "Potrero del Río"],
+  "ENCARNACIÓN DE DÍAZ": ["Centro", "La Chona", "San Sebastián", "Barrio Alto"],
+  "ETZATLÁN": ["Centro", "La Alcantarilla", "Palo Verde"],
+  "GÓMEZ FARÍAS": ["San Sebastián del Sur", "La Cofradía"],
+  "GUACHINANGO": ["Centro", "La Estanzuela"],
+  "GUADALAJARA": ["Americana", "Santa Tere", "Providencia", "Centro", "Ladrón de Guevara", "Oblatos", "Huentitán", "Jardines del Bosque", "Polanco", "Miravalle"],
+  "HOSTOTIPAQUILLO": ["Centro", "La Taberna", "Santo Domingo"],
+  "HUEJÚCAR": ["Centro", "Tenzompa"],
+  "HUEJUQUILLA EL ALTO": ["Centro", "Tenzompa", "La Soledad"],
+  "IXTLAHUACÁN DE LOS MEMBRILLOS": ["Centro", "Olipilla", "Atequiza", "El Rodeo"],
+  "IXTLAHUACÁN DEL RÍO": ["Centro", "Masueco", "San Antonio"],
+  "JALOSTOTITLÁN": ["Centro", "Santa Ana de Guadalupe", "La Mezcalera"],
+  "JAMAY": ["Centro", "San Miguel", "La Capilla"],
+  "JESÚS MARÍA": ["Centro", "Josefino de Allende"],
+  "JILOTLÁN DE LOS DOLORES": ["Centro", "Las Lomas"],
+  "JOCOTEPEC": ["Centro", "San Juan Cosalá", "Zapotitán de Hidalgo", "El Chante"],
+  "JUANACATLÁN": ["Centro", "El Mirador", "Villas de Andalucía"],
+  "JUCHITLÁN": ["Centro", "San José de los Guajes"],
+  "LAGOS DE MORENO": ["Centro", "La Aurora", "Paseos de la Montaña", "Cristeros", "Cañada de Ricos"],
+  "MAGDALENA": ["Centro", "La Joya", "San Andrés"],
+  "MASCOTA": ["Centro", "Navidad", "Galope"],
+  "MAZAMITLA": ["Centro", "La Toscana", "Los Cerezos", "Monteverde"],
+  "MEXTICACÁN": ["Centro", "Cañada de Islas"],
+  "MEZQUITIC": ["Centro", "San Andrés Cohamiata", "San Sebastián Teponahuaxtlán"],
+  "MIXTLÁN": ["Centro", "Cuyutlán"],
+  "OCOTLÁN": ["Centro", "San Juan", "Lázaro Cárdenas", "Paso Blanco"],
+  "OJUELOS DE JALISCO": ["Centro", "Matancillas", "Chinampas"],
+  "PIHUAMO": ["Centro", "La Estrella", "El Naranjo"],
+  "PONCITLÁN": ["Centro", "Mezcala", "Cuitzeo", "San Pedro Itzicán"],
+  "PUERTO VALLARTA": ["Marina Vallarta", "Olas Altas", "Conchas Chinas", "Versalles", "Pitillal", "Zona Romántica", "Cinco de Diciembre", "Fluvial"],
+  "QUITUPAN": ["Centro", "San Diego", "Lázaro Cárdenas"],
+  "SAN CRISTÓBAL DE LA BARRANCA": ["Centro", "La Lobera"],
+  "SAN DIEGO DE ALEJANDRÍA": ["Centro", "La Presita"],
+  "SAN GABRIEL": ["Centro", "Apango", "Jiquilpan"],
+  "SAN IGNACIO CERRO GORDO": ["Centro", "La Granjena"],
+  "SAN JUAN DE LOS LAGOS": ["Centro", "Sangre de Cristo", "Lomas del Calvario", "Espíritu Santo"],
+  "SAN JUANITO DE ESCOBEDO": ["Centro", "Estancia de Ayllón"],
+  "SAN JULIÁN": ["Centro", "Las Cruces"],
+  "SAN MARCOS": ["Centro", "San José de los Conchos"],
+  "SAN MARTÍN DE BOLAÑOS": ["Centro", "Mesa del Tirador"],
+  "SAN MARTÍN HIDALGO": ["Centro", "El Salitre", "Santa Cruz de las Flores"],
+  "SAN MIGUEL EL ALTO": ["Centro", "San José de los Reynoso", "Mirandillas"],
+  "SAN SEBASTIÁN DEL OESTE": ["Centro", "San Felipe de Híjar", "La Estancia"],
+  "SANTA MARÍA DE LOS ÁNGELES": ["Centro", "Huacasco"],
+  "SANTA MARÍA DEL ORO": ["Centro", "Manuel M. Diéguez"],
+  "SAYULA": ["Centro", "Usmajac", "La Cuesta"],
+  "TALA": ["Centro", "Ruiseñores", "Ahuisculco", "El Refugio"],
+  "TALPA DE ALLENDE": ["Centro", "Ocotes", "La Cuesta"],
+  "TAMAZULA DE GORDIANO": ["Centro", "Vista Hermosa", "La Garita", "Soyatlán"],
+  "TAPALPA": ["Centro", "Ferrería de Tula", "San Francisco"],
+  "TECALITLÁN": ["Centro", "La Purísima", "Ahuijullo"],
+  "TECOLOTLÁN": ["Centro", "Quila", "Tamazulita"],
+  "TENAMAXTLÁN": ["Centro", "Miravalle"],
+  "TEOCALTICHE": ["Centro", "Mechoacanejo", "Belén del Refugio"],
+  "TEOCUITATLÁN DE CORONA": ["Centro", "Citala", "Puerta de Citala"],
+  "TEPATITLÁN DE MORELOS": ["Centro", "Popotes", "Jardines de Tepa", "Capilla de Guadalupe", "San José de Gracia"],
+  "TEQUILA": ["Centro", "La Higuerita", "El Salvador", "Santa Teresa"],
+  "TEUCHITLÁN": ["Centro", "La Labor de Rivera"],
+  "TIZAPÁN EL ALTO": ["Centro", "El Volantín", "Mismaloya"],
+  "TLAJOMULCO DE ZÚÑIGA": ["Santa Fe", "San Agustín", "La Rioja", "El Punto", "Solares", "San Sebastián", "El Palomar", "Hacienda Santa Fe"],
+  "TLAQUEPAQUE": ["Centro Histórico", "Alamo Industrial", "Lomas de Tlaquepaque", "Tlaquepaque Park", "Miravalle", "Cerro del Cuatro", "Santa Anita", "Parques de Santa Cruz"],
+  "TOLIMÁN": ["Centro", "Copala"],
+  "TOMATLÁN": ["Centro", "Pino Suárez", "La Cumbre", "Campo Acosta"],
+  "TONALÁ": ["Loma Dorada", "Centro", "Colinas de Tonalá", "Ciudad Aztlán", "Jauja", "Santa Cruz de las Huertas", "El Rosario", "Alamedas"],
+  "TONAYA": ["Centro", "Apulco"],
+  "TONILA": ["Centro", "San Marcos", "La Esperanza"],
+  "TOTATICHE": ["Centro", "Temastián"],
+  "TOTOTLÁN": ["Centro", "San Isidro"],
+  "TUXCACUESCO": ["Centro", "San Antonio"],
+  "TUXCUECA": ["Centro", "San Luis Soyatlán"],
+  "TUXPAN": ["Centro", "Pueblo Nuevo", "Talpitas"],
+  "UNIÓN DE SAN ANTONIO": ["Centro", "Tlacuitapa"],
+  "UNIÓN DE TULA": ["Centro", "San José de los Flores"],
+  "VALLE DE GUADALUPE": ["Centro", "Villa de Ornelas"],
+  "VALLE DE JUÁREZ": ["Centro", "Paso de la Carretera"],
+  "VILLA CORONA": ["Centro", "Atotonilco el Bajo", "Estipac"],
+  "VILLA GUERRERO": ["Centro", "Azqueltán"],
+  "VILLA HIDALGO": ["Centro", "Paso de la Carretera"],
+  "VILLA PURIFICACIÓN": ["Centro", "Jirosto"],
+  "YAHUALICA DE GONZÁLEZ GALLO": ["Centro", "Manalisco", "Huisquilco"],
+  "ZACOALCO DE TORRES": ["Centro", "Barranca de Otates", "General Andrés Figueroa"],
+  "ZAPOPAN": ["Puerta de Hierro", "Real de Valdepeñas", "Ciudad del Sol", "Tabachines", "Bugambilias", "Arcos de Zapopan", "Valle Real", "La Constitución"],
+  "ZAPOTILTIC": ["Centro", "El Rincón", "Huescalapa"],
+  "ZAPOTITLÁN DE VADILLO": ["Centro", "San José del Carmen"],
+  "ZAPOTLÁN DEL REY": ["Centro", "Santiago Totolimichán"],
+  "ZAPOTLÁN EL GRANDE": ["Centro", "Ciudad Guzmán", "Colinas de la Montaña", "Constituyentes"],
+  "ZAPOTLANEJO": ["Centro", "La Purísima", "Matatlán", "Santa Fe"]
 };
 
 const opcionesGiros = {
-"GASTRONOMÍA": ["Restaurante", "Sushi & Teriyaki", "Taquería", "Pizzería", "Cafetería", "Cocina Económica", "Snacks y Alitas", "Pastelería y Repostería", "Bar y Pub", "Food Truck", "Cenas Tradicionales", "Marisquería"],
-"COMERCIO MINORISTA": ["Abarrotes", "Boutique", "Zapatería", "Ferretería", "Farmacia", "Papelería", "Electrónica", "Tienda de Regalos", "Florería", "Mueblería", "Joyas y Accesorios", "Artículos Deportivos", "Juguetería", "Óptica"],
-"SERVICIOS": ["Consultorio Médico", "Despacho Jurídico", "Agencia Marketing", "Veterinaria", "Gimnasio", "Estética", "Barbería", "Lavandería y Tintorería", "Reparación de Celulares", "Talleres Mecánicos", "Estudio de Tatuajes", "Escuela / Centro de Capacitación", "Agencia de Viajes"],
-"SALUD Y BIENESTAR": ["Consultorio Dental", "Laboratorio Clínico", "Spa y Masajes", "Nutriólogo", "Psicología", "Centro de Yoga", "Rehabilitación Física", "Podología"],
-"CONSTRUCCIÓN Y HOGAR": ["Arquitectura y Diseño", "Carpintería", "Vidriería", "Venta de Materiales", "Instalaciones Eléctricas", "Pinturas", "Cerrajería", "Aire Acondicionado"],
-"AUTOMOTRIZ": ["Lote de Autos", "Autolavado (Car Wash)", "Llantera", "Refaccionaria", "Servicio Eléctrico Automotriz", "Verificación Vehicular", "Hojalatería y Pintura"],
-"TECNOLOGÍA Y DIGITAL": ["Desarrollo de Software", "Ciber Café", "Soporte Técnico", "Venta de Accesorios Gamer", "Impresión 3D", "Seguridad y Cámaras"]
+  "GASTRONOMÍA": ["Restaurante", "Sushi & Teriyaki", "Taquería", "Pizzería", "Cafetería", "Cocina Económica", "Snacks y Alitas", "Pastelería y Repostería", "Bar y Pub", "Food Truck", "Cenas Tradicionales", "Marisquería"],
+  "COMERCIO MINORISTA": ["Abarrotes", "Boutique", "Zapatería", "Ferretería", "Farmacia", "Papelería", "Electrónica", "Tienda de Regalos", "Florería", "Mueblería", "Joyas y Accesorios", "Artículos Deportivos", "Juguetería", "Óptica"],
+  "SERVICIOS": ["Consultorio Médico", "Despacho Jurídico", "Agencia Marketing", "Veterinaria", "Gimnasio", "Estética", "Barbería", "Lavandería y Tintorería", "Reparación de Celulares", "Talleres Mecánicos", "Estudio de Tatuajes", "Escuela / Centro de Capacitación", "Agencia de Viajes"],
+  "SALUD Y BIENESTAR": ["Consultorio Dental", "Laboratorio Clínico", "Spa y Masajes", "Nutriólogo", "Psicología", "Centro de Yoga", "Rehabilitación Física", "Podología"],
+  "CONSTRUCCIÓN Y HOGAR": ["Arquitectura y Diseño", "Carpintería", "Vidriería", "Venta de Materiales", "Instalaciones Eléctricas", "Pinturas", "Cerrajería", "Aire Acondicionado"],
+  "AUTOMOTRIZ": ["Lote de Autos", "Autolavado (Car Wash)", "Llantera", "Refaccionaria", "Servicio Eléctrico Automotriz", "Verificación Vehicular", "Hojalatería y Pintura"],
+  "TECNOLOGÍA Y DIGITAL": ["Desarrollo de Software", "Ciber Café", "Soporte Técnico", "Venta de Accesorios Gamer", "Impresión 3D", "Seguridad y Cámaras"]
 };
 
 export default function App() {
@@ -148,38 +156,107 @@ export default function App() {
   const [view, setView] = useState('app'); 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState('variables');
-  const [municipio, setMunicipio] = useState("GUADALAJARA");
-  const [colonia, setColonia] = useState("Americana");
-  const [giro, setGiro] = useState("GASTRONOMÍA");
-  const [subGiro, setSubGiro] = useState("Restaurante");
+  
+  const [municipio, setMunicipio] = useState("ACATIC");
+  const [colonia, setColonia] = useState("Centro");
+  const [giro, setGiro] = useState("SALUD Y BIENESTAR");
+  const [subGiro, setSubGiro] = useState("Consultorio Dental");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  const [poblacion, setPoblacion] = useState(85000);
-  const [saturacion, setSaturacion] = useState(40);
-  const [movilidad, setMovilidad] = useState(85);
+  const [poblacion, setPoblacion] = useState(45000);
+  const [saturacion, setSaturacion] = useState(18);
+  const [movilidad, setMovilidad] = useState(75);
   const [presupuesto, setPresupuesto] = useState("Medio");
   const [target, setTarget] = useState("Media Alta");
   const [agresividad, setAgresividad] = useState("Normal");
   const [horario, setHorario] = useState("Vespertino");
 
-  const [momentum, setMomentum] = useState(75); 
-  const [insatisfaccion, setInsatisfaccion] = useState(65); 
+  const [momentum, setMomentum] = useState(90); 
+  const [insatisfaccion, setInsatisfaccion] = useState(60); 
   const [estiloConsumo, setEstiloConsumo] = useState("Aspiracional");
+
+  const [reporteISO, setReporteISO] = useState(null);
+  const [cargandoAnalisis, setCargandoAnalisis] = useState(false);
+  const [negocios, setNegocios] = useState([]); 
 
   const reportRef = useRef();
 
+  // Sincronización defensiva de Municipios y Colonias
   useEffect(() => {
-  if (datosJalisco[municipio]) {
-    setColonia(datosJalisco[municipio][0]);
-  }
-}, [municipio]);
+    const muniKey = (municipio || "").toUpperCase();
+    if (datosJalisco[muniKey]) {
+      if (!datosJalisco[muniKey].includes(colonia)) {
+        setColonia(datosJalisco[muniKey] || "");
+      }
+    }
+  }, [municipio]);
 
-useEffect(() => {
-  if (opcionesGiros[giro]) {
-    setSubGiro(opcionesGiros[giro][0]);
-  }
-}, [giro]);
-  const ISO_VAL = 77.5; 
+  // Sincronización defensiva de Giros y Subgiros
+  useEffect(() => {
+    const giroKey = (giro || "").toUpperCase();
+    if (opcionesGiros[giroKey]) {
+      if (!opcionesGiros[giroKey].includes(subGiro)) {
+        setSubGiro(opcionesGiros[giroKey] || "");
+      }
+    }
+  }, [giro]);
+
+  // MOTOR Predictivo Seguro conectado a la interfaz con dependencia de subGiro
+  useEffect(() => {
+    const ejecutarMotorPredictivo = async () => {
+      if (!municipio || !colonia || !giro || !subGiro) return;
+      
+      setCargandoAnalisis(true);
+      try {
+        const resultado = await analizarZonaJalisco(municipio, colonia, giro, subGiro);
+        
+        if (resultado && resultado.exito) {
+          setReporteISO(resultado);
+          setNegocios(resultado.negociosExistentes || []); 
+          
+          const vars = resultado.variables || {};
+          setPoblacion(Number(vars.X1) || 45000);
+          setSaturacion(Number(vars.X3) || 18);
+          setMomentum(Number(vars.X5) || 90);
+          setMovilidad(Number(vars.X6) || 75);
+          
+          if (vars.X4 && Number(vars.X4) !== 0) {
+            setInsatisfaccion(Math.round((1 / Number(vars.X4)) * 250));
+          } else {
+            setInsatisfaccion(60);
+          }
+          
+          const potencial = resultado.potencialVenta || "";
+          setEstiloConsumo(potencial.includes("Aspiracional") ? "Aspiracional" : "Necesidad");
+        } else {
+          setNegocios([]);
+          setReporteISO({
+            iso: 75,
+            recomendacionSensata: "Optimizar ubicación en avenidas principales.",
+            recomendacionFantasiosa: `Zona alternativa en desarrollo comercial de ${municipio}.`,
+            diagnostico: "Procesando capas de entorno urbano.",
+            tipoZona: "urbano"
+          });
+        }
+      } catch (error) {
+        console.error("Error en el motor predictivo de datos:", error);
+        setNegocios([]);
+        setReporteISO({
+          iso: 60,
+          recomendacionSensata: "Análisis limitado de forma temporal.",
+          recomendacionFantasiosa: "Revisar conectividad de datos.",
+          diagnostico: "Error de lectura en base predictiva local.",
+          tipoZona: "urbano"
+        });
+      } finally {
+        setCargandoAnalisis(false);
+      }
+    };
+
+    ejecutarMotorPredictivo();
+  }, [municipio, colonia, giro, subGiro]); 
+
+  const ISO_VAL = reporteISO ? (reporteISO.iso || 77) : 77; 
 
   const handleAudit = () => {
     setIsAnalyzing(true);
@@ -190,6 +267,7 @@ useEffect(() => {
   const descargarReporte = async () => {
     if (!isLoggedIn) { setView('login'); return; }
     const element = reportRef.current;
+    if (!element) return;
     const canvas = await html2canvas(element, { scale: 2 });
     const imgData = canvas.toDataURL('image/png');
     const pdf = new jsPDF('p', 'mm', 'a4');
@@ -200,8 +278,8 @@ useEffect(() => {
   };
 
   const radarData = [
-    { subject: 'Población', A: (poblacion / 200000) * 100 },
-    { subject: 'Saturación', A: 100 - saturacion },
+    { subject: 'Población', A: Math.min((poblacion / 200000) * 100, 100) },
+    { subject: 'Saturación', A: Math.max(100 - saturacion, 0) },
     { subject: 'Movilidad', A: movilidad },
     { subject: 'Digital', A: momentum }, 
     { subject: 'ISO', A: ISO_VAL },
@@ -213,10 +291,17 @@ useEffect(() => {
   return (
     <div className="min-h-screen flex flex-col items-center p-4 md:p-10 font-sans bg-cover bg-fixed bg-center relative transition-all duration-500" style={{ backgroundImage: `url(${FondoApp})` }}>
       
-      {/* Superposición Oscura Dinámica */}
+      <Toaster position="top-right" reverseOrder={false} />
+      
+      <button 
+        onClick={sembrarDatosJalisco} 
+        className="fixed bottom-4 right-4 z-50 px-4 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-teal-950/50 hover:scale-105 active:scale-95 transition-all"
+      >
+        ⚙️ Inicializar Base Jalisco
+      </button>
+
       {darkMode && <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-[2px] z-0 pointer-events-none" />}
 
-      {/* Header Adaptativo */}
       <header className={`relative z-10 w-full max-w-7xl ${darkMode ? 'bg-slate-900/90 border-slate-700 shadow-black/40' : 'bg-white/90 border-white/50 shadow-2xl'} backdrop-blur-md p-6 rounded-[2.5rem] flex justify-between items-center mb-8 border transition-all duration-500`}>
         <div className="flex flex-col">
           <h1 className={`text-2xl font-black tracking-tighter uppercase italic leading-none ${darkMode ? 'text-white' : 'text-slate-800'}`}>
@@ -243,15 +328,15 @@ useEffect(() => {
                <button onClick={() => setIsLoggedIn(false)} className="text-[10px] font-black text-rose-400 uppercase tracking-widest hover:text-rose-600 transition-colors">Salir</button>
             </div>
           )}
-          <div className="bg-teal-500 text-white px-8 py-3 rounded-2xl font-black text-xl shadow-[0_10px_20px_rgba(20,184,166,0.3)]">
-            ISO: {ISO_VAL}%
+
+          <div className={`px-8 py-3 rounded-2xl font-black text-xl transition-all text-white shadow-lg ${cargandoAnalisis ? 'bg-indigo-600 animate-pulse shadow-indigo-500/30' : 'bg-teal-500 shadow-[0_10px_20px_rgba(20,184,166,0.3)]'}`}>
+            {cargandoAnalisis ? "CALCULANDO..." : `ISO: ${ISO_VAL}%`}
           </div>
         </div>
       </header>
 
       <div className="relative z-10 w-full max-w-7xl grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-8 items-start animate-in fade-in duration-500">
         
-        {/* ASIDE Adaptativo */}
         <aside className={`backdrop-blur-md p-8 rounded-[3.5rem] shadow-2xl border space-y-8 overflow-hidden relative transition-all duration-500 ${darkMode ? 'bg-slate-900/95 border-slate-800' : 'bg-white/95 border-white'}`}>
           <div className={`absolute -top-24 -right-24 w-48 h-48 rounded-full blur-3xl ${darkMode ? 'bg-teal-500/5' : 'bg-teal-500/10'}`}></div>
           <div className={`absolute -bottom-24 -left-24 w-48 h-48 rounded-full blur-3xl ${darkMode ? 'bg-indigo-500/5' : 'bg-indigo-500/10'}`}></div>
@@ -263,9 +348,9 @@ useEffect(() => {
             </div>
             <div className={`space-y-3 p-4 rounded-[2rem] border ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-indigo-50/30 border-indigo-100/50'}`}>
               <SelectBox label="Municipio" value={municipio} onChange={setMunicipio} options={Object.keys(datosJalisco)} darkMode={darkMode} />
-              <SelectBox label="Colonia" value={colonia} onChange={setColonia} options={datosJalisco[municipio] || []} darkMode={darkMode} />
+              <SelectBox label="Colonia" value={colonia} onChange={setColonia} options={datosJalisco[(municipio || "").toUpperCase()] || []} darkMode={darkMode} />
               <SelectBox label="Giro" value={giro} onChange={setGiro} options={Object.keys(opcionesGiros)} darkMode={darkMode} />
-              <SelectBox label="Subgiro" value={subGiro} onChange={setSubGiro} options={opcionesGiros[giro] || []} darkMode={darkMode} />
+              <SelectBox label="Subgiro" value={subGiro} onChange={setSubGiro} options={opcionesGiros[(giro || "").toUpperCase()] || []} darkMode={darkMode} />
             </div>
           </section>
 
@@ -308,12 +393,11 @@ useEffect(() => {
           </button>
         </aside>
 
-        {/* MAIN Adaptativo */}
         <main className={`backdrop-blur-md p-4 rounded-[4rem] shadow-2xl border min-h-[600px] flex flex-col overflow-hidden transition-all duration-500 ${darkMode ? 'bg-slate-900/95 border-slate-800 shadow-black/40' : 'bg-white/95 border-white'}`}>
           <nav className={`flex gap-2 p-2 rounded-full mb-6 mx-4 mt-2 border flex-shrink-0 ${darkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-100/50 border-slate-200/50'}`}>
             {['variables', 'mapa', 'comparativa', 'competencia'].map((t) => (
               <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-4 rounded-2xl font-black text-[10px] uppercase transition-all ${activeTab === t ? "bg-teal-500 text-white shadow-lg shadow-teal-500/30 scale-[1.02]" : darkMode ? "text-slate-500 hover:text-slate-300" : "text-slate-400"}`}>
-                {t}
+                {t === 'competencia' ? `competencia (${negocios.length})` : t}
               </button>
             ))}
           </nav>
@@ -333,7 +417,7 @@ useEffect(() => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className={`p-6 rounded-[2.5rem] border flex flex-col justify-between transition-colors ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50/50 border-white'}`}>
                     <div className="flex justify-between items-center mb-4">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Vida Útil</span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Vida Útil del Impulso</span>
                       <span className={`text-xs font-black uppercase italic ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>18 Meses Est.</span>
                     </div>
                     <div className={`h-1.5 rounded-full overflow-hidden ${darkMode ? 'bg-slate-900' : 'bg-slate-200'}`}>
@@ -343,12 +427,12 @@ useEffect(() => {
 
                   <div className={`p-6 rounded-[2.5rem] border flex flex-col justify-between transition-colors ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50/50 border-white'}`}>
                     <div className="flex justify-between items-center mb-4">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Factor Aspiracional</span>
-                      <span className={`text-xs font-black uppercase italic ${darkMode ? 'text-teal-400' : 'text-teal-600'}`}>Alto</span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Factor de Consumo</span>
+                      <span className={`text-xs font-black uppercase italic ${darkMode ? 'text-teal-400' : 'text-teal-600'}`}>{estiloConsumo}</span>
                     </div>
                     <div className="flex gap-1 h-1.5">
-                      {[1, 2, 3, 4, 5].map((b) => (
-                        <div key={b} className={`flex-1 rounded-full ${b <= 4 ? 'bg-teal-500' : (darkMode ? 'bg-slate-900' : 'bg-slate-200')}`} />
+                      {[1, 2, 3, 4].map((b) => (
+                        <div key={b} className={`flex-1 rounded-full ${estiloConsumo === "Aspiracional" ? (b <= 4 ? 'bg-teal-500' : (darkMode ? 'bg-slate-900' : 'bg-slate-200')) : (b <= 2 ? 'bg-indigo-500' : (darkMode ? 'bg-slate-900' : 'bg-slate-200'))}`} />
                       ))}
                     </div>
                   </div>
@@ -372,33 +456,75 @@ useEffect(() => {
                     <CircleMarker center={[20.674, -103.361]} radius={14} pathOptions={{fillColor: '#14b8a6', color: 'white', weight: 4, fillOpacity: 0.9}} />
                   </MapContainer>
                 </div>
+                
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <AnalisisCard title="Sensata (Local)" value="Mover 250m" sub="Optimización Zona" color="indigo" darkMode={darkMode} />
-                  <AnalisisCard title="Fantasiosa (Nacional)" value="Mazatlán, SIN" sub="Océano Azul Detectado" color="orange" darkMode={darkMode} />
+                  <AnalisisCard 
+                    title="Sensata (Local)" 
+                    value={cargandoAnalisis ? "Calculando..." : `Recomendación ${colonia}`} 
+                    sub={cargandoAnalisis ? "Cargando recomendación..." : (reporteISO?.recomendacionSensata || "Ajustar ubicación según flujo primario.")} 
+                    color="indigo" 
+                    darkMode={darkMode} 
+                  />
+                  
+                  <AnalisisCard 
+                    title="Fantasiosa (Océano Azul)" 
+                    value={cargandoAnalisis ? "Buscando..." : `${municipio} Alternativo`} 
+                    sub={cargandoAnalisis ? "Evaluando mercados..." : (reporteISO?.recomendacionFantasiosa || `Zonas con menor densidad de competidores en ${municipio}.`)} 
+                    color="orange" 
+                    darkMode={darkMode} 
+                  />
+                  
                   <div className={`p-6 rounded-[2.5rem] border flex flex-col justify-center transition-colors ${darkMode ? 'bg-teal-900/40 border-teal-800' : 'bg-teal-900 border-teal-800 shadow-teal-900/20 shadow-lg'}`}>
-                    <p className="text-[9px] font-black text-teal-400 uppercase mb-1">Estilo de Vida</p>
-                    <span className="text-xl font-black text-white uppercase italic">Consumo {estiloConsumo}</span>
+                    <p className="text-[9px] font-black text-teal-400 uppercase mb-1">Modelo de Venta</p>
+                    <span className="text-sm font-black text-white uppercase italic leading-tight">
+                      {cargandoAnalisis ? "Procesando..." : `Consumo ${estiloConsumo}`}
+                    </span>
                   </div>
                 </div>
               </div>
             )}
 
             {activeTab === 'competencia' && (
-              <div className="space-y-6 py-4">
+              <div className="space-y-6 py-4 animate-in fade-in duration-500">
                 <div className={`p-6 rounded-[2.5rem] border transition-colors ${darkMode ? 'bg-amber-900/20 border-amber-900/50' : 'bg-amber-50 border-amber-100'}`}>
                    <p className="text-[11px] font-black text-amber-600 uppercase tracking-widest mb-2">Capa de Reputación Digital (X4)</p>
-                   <p className={`text-xs font-bold italic ${darkMode ? 'text-amber-200/80' : 'text-amber-800'}`}>"Falta de métodos de pago digitales y estacionamiento limitado."</p>
+                   <p className={`text-xs font-bold italic ${darkMode ? 'text-amber-200/80' : 'text-amber-800'}`}>
+                     {reporteISO ? reporteISO.diagnostico : `"Analizando comentarios de la periferia..."`}
+                   </p>
                 </div>
-                <div className="grid gap-4">
-                  {["Competidor Local A", "Rival de Zona B", "Establecimiento C"].map((item, i) => (
-                    <div key={i} className={`flex justify-between items-center p-6 rounded-[2.5rem] border transition-colors ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-white shadow-sm'}`}>
-                      <div className="flex items-center gap-6">
-                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black border ${darkMode ? 'bg-slate-900 border-slate-700 text-teal-400' : 'bg-white border-slate-100 text-teal-600 shadow-sm'}`}>{i + 1}</div>
-                        <p className={`font-black text-sm uppercase ${darkMode ? 'text-slate-300' : 'text-slate-800'}`}>{item}</p>
+                
+                {/* RENDERIZADO DINÁMICO COMPLETAMENTE INTEGRADO CON TU MOTOR PREDICTIVO */}
+                <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+                  {negocios.length > 0 ? (
+                    negocios.map((item, i) => (
+                      <div key={item.id || i} className={`flex flex-col justify-between p-6 rounded-[2.5rem] border transition-all hover:shadow-md ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-white shadow-sm'}`}>
+                        <div>
+                          <div className="flex justify-between items-start gap-4 mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs border ${darkMode ? 'bg-slate-900 border-slate-700 text-teal-400' : 'bg-white border-slate-100 text-teal-600 shadow-sm'}`}>{i + 1}</div>
+                              <p className={`font-black text-xs uppercase tracking-tight ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{item.nombre}</p>
+                            </div>
+                            <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded-xl text-[9px] font-black whitespace-nowrap flex items-center gap-1">
+                              {item.calificacion || "4.0"} <span className="text-amber-500">{item.estrellas || "★★★★"}</span>
+                            </span>
+                          </div>
+                          
+                          <p className="text-[10px] text-slate-400 uppercase font-semibold">Giro: <span className={darkMode ? 'text-slate-300' : 'text-slate-600'}>{item.giro || giro}</span></p>
+                          <p className="text-[10px] text-slate-400 uppercase font-semibold mt-0.5">Afluencia: <span className={darkMode ? 'text-slate-300' : 'text-slate-600'}>{item.afluencia || "Media"}</span></p>
+                        </div>
+
+                        <div className="mt-4 pt-3 border-t border-slate-200/10 flex justify-between items-center">
+                          <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md ${item.estado?.includes('Directa') ? 'bg-rose-500/10 text-rose-400' : 'bg-slate-500/10 text-slate-400'}`}>
+                            {item.estado || "Competencia Directa"}
+                          </span>
+                        </div>
                       </div>
-                      <span className="text-[10px] font-black text-rose-500 uppercase">Debilidad</span>
+                    ))
+                  ) : (
+                    <div className="col-span-full text-center py-12 text-xs font-medium text-slate-400 uppercase tracking-widest">
+                      No se detectaron comercios activos en el buffer actual.
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
             )}
@@ -435,8 +561,8 @@ useEffect(() => {
                       </div>
 
                       <p className={`text-[11px] leading-relaxed italic relative z-10 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                        Basado en el índice <span className="font-bold text-teal-500">ISO del {ISO_VAL}%</span>, el negocio en <span className={darkMode ? 'text-white' : 'text-slate-900'}>{colonia}</span> presenta una viabilidad robusta. 
-                        Se recomienda priorizar digitalización.
+                        Basado en el índice <span className="font-bold text-teal-500">ISO del {ISO_VAL}%</span>, el negocio de <span className="font-bold">{giro}</span> en <span className={darkMode ? 'text-white' : 'text-slate-900'}>{colonia}</span> presenta un entorno {ISO_VAL > 65 ? 'favorable para la inversión.' : 'con saturación a considerar.'} 
+                        {reporteISO ? ` ${reporteISO.recomendacionSensata}` : ''}
                       </p>
                     </div>
                 </div>
@@ -455,7 +581,7 @@ useEffect(() => {
   );
 }
 
-// COMPONENTES AUXILIARES ACTUALIZADOS
+// COMPONENTES AUXILIARES
 function AnalisisCard({ title, value, sub, color, darkMode }) {
   const styles = {
     indigo: darkMode ? 'bg-indigo-900/20 border-indigo-900/50' : 'bg-indigo-50 border-indigo-100',
@@ -465,8 +591,8 @@ function AnalisisCard({ title, value, sub, color, darkMode }) {
   return (
     <div className={`p-6 rounded-[2.5rem] border shadow-sm flex flex-col justify-center transition-colors ${styles[color] || styles.default}`}>
       <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>{title}</p>
-      <span className={`text-xl font-black leading-tight uppercase ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}>{value}</span>
-      <span className={`text-[10px] font-black uppercase ${color === 'indigo' ? 'text-indigo-400' : color === 'orange' ? 'text-orange-400' : 'text-teal-600'}`}>{sub}</span>
+      <span className={`text-sm font-black leading-tight uppercase ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}>{value}</span>
+      <span className="text-[10px] font-medium text-slate-500 mt-1">{sub}</span>
     </div>
   );
 }
@@ -480,25 +606,26 @@ function SelectBox({ label, value, onChange, options, darkMode }) {
         onChange={(e) => onChange(e.target.value)} 
         className={`w-full p-4 border rounded-[1.5rem] font-bold text-[11px] outline-none transition-all cursor-pointer shadow-sm appearance-none ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-300 focus:ring-teal-500/20' : 'bg-white border-slate-100 text-slate-700 focus:ring-teal-500/10'}`}
       >
-        {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        {(options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
       </select>
     </div>
   );
 }
 
 function Slider({ label, value, setValue, max, unit = "", darkMode }) {
+  const safeValue = typeof value === 'number' ? value : 0;
   return (
     <div className="group space-y-6">
       <div className="flex justify-between items-end px-2">
         <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{label}</label>
         <span className={`text-2xl font-black tracking-tighter leading-none ${darkMode ? 'text-white' : 'text-slate-800'}`}>
-          {value.toLocaleString()}<small className="text-[10px] text-teal-500 ml-1">{unit}</small>
+          {safeValue.toLocaleString()}<small className="text-[10px] text-teal-500 ml-1">{unit}</small>
         </span>
       </div>
       <div className="relative h-6 flex items-center">
         <div className={`absolute w-full h-1.5 rounded-full ${darkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
-        <div className="absolute h-1.5 bg-teal-500 rounded-full transition-all" style={{ width: `${(value / max) * 100}%` }} />
-        <input type="range" min="0" max={max} value={value} onChange={(e) => setValue(Number(e.target.value))} className="absolute w-full appearance-none bg-transparent cursor-pointer z-10 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-[5px] [&::-webkit-slider-thumb]:border-teal-500" />
+        <div className="absolute h-1.5 bg-teal-500 rounded-full transition-all" style={{ width: `${(safeValue / (max || 1)) * 100}%` }} />
+        <input type="range" min="0" max={max} value={safeValue} onChange={(e) => setValue(Number(e.target.value))} className="absolute w-full appearance-none bg-transparent cursor-pointer z-10 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-[5px] [&::-webkit-slider-thumb]:border-teal-500" />
       </div>
     </div>
   );
@@ -516,14 +643,12 @@ function MetricaInfo({ label, desc, color, darkMode }) {
   );
 }
 
-// PDF (Se mantiene igual ya que es una impresión estática en blanco)
+// REPORTE ESTRUCTURADO PARA IMPRESIÓN (MANTENIDO INVISIBLE FUERA DE PANTALLA)
 const ReporteEstructurado = React.forwardRef(({ municipio, colonia, giro, subGiro, poblacion, momentum, saturacion, insatisfaccion, ISO_VAL, estiloConsumo }, ref) => {
-  
-  // Función para determinar el color según el éxito (ISO_VAL)
   const getSuccessColor = (val) => {
-    if (val >= 80) return '#059669'; // Verde éxito
-    if (val >= 60) return '#d97706'; // Ámbar/Naranja
-    return '#dc2626'; // Rojo riesgo
+    if (val >= 80) return '#059669'; 
+    if (val >= 60) return '#d97706'; 
+    return '#dc2626'; 
   };
 
   const statusColor = getSuccessColor(ISO_VAL);
@@ -540,8 +665,6 @@ const ReporteEstructurado = React.forwardRef(({ municipio, colonia, giro, subGir
         flexDirection: 'column', 
         fontFamily: "'Inter', 'Segoe UI', sans-serif" 
       }}>
-        
-        {/* ENCABEZADO MEJORADO */}
         <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `4px solid ${statusColor}`, paddingBottom: '20px', marginBottom: '30px' }}>
           <div>
             <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0f172a', margin: 0, letterSpacing: '-0.5px' }}>
@@ -555,11 +678,10 @@ const ReporteEstructurado = React.forwardRef(({ municipio, colonia, giro, subGir
             <div style={{ backgroundColor: '#f1f5f9', padding: '5px 12px', borderRadius: '20px', display: 'inline-block' }}>
               <p style={{ fontSize: '10px', fontWeight: '800', margin: 0, color: '#475569' }}>FECHA DE EMISIÓN: {new Date().toLocaleDateString()}</p>
             </div>
-            <p style={{ fontSize: '11px', color: '#64748b', marginTop: '8px', fontWeight: '500' }}>{colonia.toUpperCase()} | {municipio}</p>
+            <p style={{ fontSize: '11px', color: '#64748b', marginTop: '8px', fontWeight: '500' }}>{(colonia || "").toUpperCase()} | {municipio}</p>
           </div>
         </div>
 
-        {/* SECCIÓN SCORE PRINCIPAL */}
         <div style={{ display: 'flex', gap: '40px', alignItems: 'center', marginBottom: '40px', backgroundColor: '#f8fafc', padding: '30px', borderRadius: '16px' }}>
             <div style={{ 
               width: '130px', 
@@ -589,39 +711,32 @@ const ReporteEstructurado = React.forwardRef(({ municipio, colonia, giro, subGir
           </div>
         </div>
 
-        {/* GRID DE MÉTRICAS (LO QUE LE DA VALOR AL PDF) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '40px' }}>
-          
           <MetricCard label="Población Estimada" value={poblacion} icon="👥" />
           <MetricCard label="Saturación de Mercado" value={`${saturacion}%`} icon="📊" color={saturacion > 70 ? '#dc2626' : '#2563eb'} />
           <MetricCard label="Índice de Insatisfacción" value={`${insatisfaccion}%`} icon="⚠️" />
           <MetricCard label="Momentum del Sector" value={momentum} icon="🚀" />
-          
         </div>
 
-        {/* SECCIÓN DE PERFIL DE CONSUMO */}
         <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
            <h3 style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a', marginBottom: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
              PERFIL DE CONSUMO PREDOMINANTE
            </h3>
            <p style={{ fontSize: '12px', color: '#475569', lineHeight: '1.8' }}>
-             {estiloConsumo || "El perfil identificado muestra una tendencia hacia el consumo de servicios de conveniencia con una frecuencia semanal media-alta."}
+             {estiloConsumo ? `El perfil identificado en la zona se clasifica bajo un Modelo de Venta ${estiloConsumo}.` : "El perfil identificado muestra una tendencia hacia el consumo de servicios de conveniencia con una frecuencia semanal media-alta."}
            </p>
         </div>
 
-        {/* PIE DE PÁGINA */}
         <div style={{ marginTop: 'auto', textAlign: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '20px' }}>
           <p style={{ fontSize: '9px', color: '#94a3b8' }}>
             Este reporte es propiedad de Geomarket Predictor. Los datos son estimaciones basadas en modelos estadísticos y algoritmos de IA.
           </p>
         </div>
-
       </div>
     </div>
   );
 });
 
-// Componente auxiliar para las tarjetas de métricas
 const MetricCard = ({ label, value, icon, color = '#1e293b' }) => (
   <div style={{ padding: '15px', border: '1px solid #f1f5f9', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '15px' }}>
     <span style={{ fontSize: '20px' }}>{icon}</span>

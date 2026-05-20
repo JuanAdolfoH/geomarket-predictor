@@ -1,7 +1,44 @@
-import React from 'react';
+import React, { useState } from 'react'; // 1. Agregamos useState para controlar los inputs
 import FondoApp from './assets/FondoApp.png';
+// 2. Importamos las herramientas de Firebase que configuramos juntos
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from './firebase'; 
+import { toast } from 'react-hot-toast';
 
 const Login = ({ onLogin, onBack, onGoToRegister }) => {
+  // Estados para capturar lo que escribe el usuario
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  // Función controladora para procesar el inicio de sesión
+  const handleLoginSubmit = async (e) => {
+    e.preventDefault(); // Evita que la página se recargue sola
+    console.log("Intentando iniciar sesión con:", email);
+
+    try {
+      // Intentamos conectar con Google Firebase usando los datos del input
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      console.log("¡Acceso autorizado por Firebase para:", userCredential.user.email);
+      
+      // SOLO si Firebase da luz verde, ejecutamos la función para pasar al dashboard
+      if (userCredential && userCredential.user) {
+        onLogin(); 
+      }
+      
+    } catch (error) {
+      toast.error("Acceso denegado: Usuario o contraseña incorrectos");
+      
+      // 🚨 CANDADO ESTRICTO: Si el usuario no existe o se equivocó en la contraseña
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        alert("❌ Acceso Denegado: El correo electrónico o la contraseña son incorrectos. Verifica tus datos o solicita un acceso nuevo.");
+      } else if (error.code === 'auth/too-many-requests') {
+        alert("❌ Cuenta bloqueada temporalmente debido a demasiados intentos fallidos. Intenta más tarde.");
+      } else {
+        alert(`❌ Error de validación: ${error.message}`);
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen w-full flex bg-white font-sans overflow-hidden">
       
@@ -29,7 +66,7 @@ const Login = ({ onLogin, onBack, onGoToRegister }) => {
           {/* CONTENEDOR DE GRÁFICAS DE REFERENCIA */}
           <div className="relative flex gap-6 mt-12 animate-in fade-in slide-in-from-left-8 duration-1000 delay-300">
             
-            {/* Card de Gráfica de Barras (Simulada) */}
+            {/* Card de Gráfica de Barras */}
             <div className="bg-white/10 backdrop-blur-xl border border-white/20 p-6 rounded-[2.5rem] w-64 shadow-2xl transform -rotate-3 hover:rotate-0 transition-transform duration-500">
               <div className="flex justify-between items-center mb-6">
                 <span className="text-[10px] font-bold text-teal-300 uppercase tracking-widest">Competencia</span>
@@ -72,13 +109,16 @@ const Login = ({ onLogin, onBack, onGoToRegister }) => {
             <p className="text-slate-400 font-medium">Inicia sesión para acceder a tus reportes territoriales.</p>
           </div>
 
-          <form className="space-y-6" onSubmit={(e) => { e.preventDefault(); onLogin(); }}>
+          {/* Formulario vinculado a handleLoginSubmit */}
+          <form className="space-y-6" onSubmit={handleLoginSubmit}>
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Credencial de Acceso</label>
               <input 
                 type="email" 
                 placeholder="usuario@empresa.com" 
                 className="w-full p-5 bg-slate-50 border border-slate-100 rounded-2xl text-[12px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-teal-500/10 transition-all" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required 
               />
             </div>
@@ -89,6 +129,8 @@ const Login = ({ onLogin, onBack, onGoToRegister }) => {
                 type="password" 
                 placeholder="••••••••••••" 
                 className="w-full p-5 bg-slate-50 border border-slate-100 rounded-2xl text-[12px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-teal-500/10 transition-all" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 required 
               />
             </div>
