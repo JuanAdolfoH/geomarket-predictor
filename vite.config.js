@@ -7,4 +7,9 @@ export default defineConfig({
     react(),
     tailwindcss(), // <-- Importante
   ],
+  server: {
+    allowedHosts: [
+      'dedicator-purely-epidermal.ngrok-free.dev'
+    ]
+  }
 })

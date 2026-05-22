@@ -17,6 +17,8 @@ import GenerativeBackground from './GenerativeBackground';
 // Motores del Algoritmo e Inteligencia de Negocios de Jalisco
 import { analizarZonaJalisco } from './services/marketAnalysis';
 import { sembrarDatosJalisco } from './services/seedJalisco';
+// Integración Oficial con el SDK de Google Gemini
+import { GoogleGenAI } from '@google/genai';
 
 const datosJalisco = {
   "ACATIC": ["Centro", "Tierras Coloradas", "La Joya", "El Refugio"],
@@ -70,7 +72,7 @@ const datosJalisco = {
   "JILOTLÁN DE LOS DOLORES": ["Centro", "Las Lomas"],
   "JOCOTEPEC": ["Centro", "San Juan Cosalá", "Zapotitán de Hidalgo", "El Chante"],
   "JUANACATLÁN": ["Centro", "El Mirador", "Villas de Andalucía"],
-  "JUCHITLÁN": ["Centro", "San José de los Guajes"],
+  "JUCHITLÁN": ["Centro", "San Jude de los Guajes"],
   "LAGOS DE MORENO": ["Centro", "La Aurora", "Paseos de la Montaña", "Cristeros", "Cañada de Ricos"],
   "MAGDALENA": ["Centro", "La Joya", "San Andrés"],
   "MASCOTA": ["Centro", "Navidad", "Galope"],
@@ -128,7 +130,7 @@ const datosJalisco = {
   "UNIÓN DE TULA": ["Centro", "San José de los Flores"],
   "VALLE DE GUADALUPE": ["Centro", "Villa de Ornelas"],
   "VALLE DE JUÁREZ": ["Centro", "Paso de la Carretera"],
-  "VILLA Corona": ["Centro", "Atotonilco el Bajo", "Estipac"],
+  "VILLA CORONA": ["Centro", "Atotonilco el Bajo", "Estipac"],
   "VILLA GUERRERO": ["Centro", "Azqueltán"],
   "VILLA HIDALGO": ["Centro", "Paso de la Carretera"],
   "VILLA PURIFICACIÓN": ["Centro", "Jirosto"],
@@ -179,6 +181,10 @@ export default function App() {
   const [reporteISO, setReporteISO] = useState(null);
   const [cargandoAnalisis, setCargandoAnalisis] = useState(false);
   const [negocios, setNegocios] = useState([]); 
+
+  // Estados para el Consultor IA de Gemini
+  const [analisisIA, setAnalisisIA] = useState("");
+  const [cargandoIA, setCargandoIA] = useState(false);
 
   const [historialConsultas, setHistorialConsultas] = useState([
     { id: 1, fecha: "Hoy, 14:32", municipio: "ZAPOPAN", colonia: "Puerta de Hierro", giro: "SALUD Y BIENESTAR", subGiro: "Consultorio Dental", iso: 85 },
@@ -262,6 +268,69 @@ export default function App() {
 
   const ISO_VAL = reporteISO ? (reporteISO.iso || 77) : 77; 
 
+const ejecutarAuditoriaIA = async () => {
+  // Aseguramos que existan los datos mínimos seleccionados en tu formulario
+  if (!municipio || !giro) return;
+  
+  setCargandoIA(true);
+  setAnalisisIA("Iniciando conexión segura con el analista de IA...");
+  
+  try {
+    // Pega aquí la clave que acabas de copiar (la que termina en Jooo)
+    const apiKey = "AIzaSyBv0MEQC4IB0I21xIe-Cfas8YUEFzEJooo".trim(); 
+    
+    // Endpoint oficial v1 estable
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+    const prompt = `Actúa como un consultor senior de Geomarketing de Business Intelligence experto en el mercado mexicano. 
+    Analiza la viabilidad de expansión comercial de un negocio en el estado de Jalisco con estos datos seleccionados:
+    - Municipio: ${municipio}
+    - Colonia o Fraccionamiento: ${colonia || 'General'}
+    - Categoría / Giro: ${giro}
+    - Subgiro Comercial: ${subGiro}
+    - Presupuesto de Inversión: ${presupuesto}
+    - Perfil del Cliente Meta (Target): ${target}
+    - Nivel de Agresividad del Local: ${agresividad}
+    - Horario de Apertura: ${horario}
+    - Puntuación ISO Calculada por Algoritmo: ${ISO_VAL || '65'}%
+
+    Por favor redacta una auditoría ejecutiva concisa y sumamente profesional estructurada en viñetas claras con los siguientes puntos:
+    1. 🎯 EVALUACIÓN DE OPORTUNIDAD (¿La zona amerita la inversión basado en la puntuación ISO?).
+    2. 📈 3 VENTAJAS ESTRATÉGICAS que ofrece el municipio de ${municipio} para el sector de ${giro}.
+    3. ⚠️ 3 RIESGOS CRÍTICOS O COMPETENCIA a tomar en cuenta.
+    4. 🚀 RECOMENDACIÓN PRESCRIPTIVA OPERATIVA (Horarios ideales o táctica urbana para destacar en el corto plazo).`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }]
+      })
+    });
+
+    const data = await response.json();
+    
+    if (data.error) {
+      console.error("Error devuelto por la API de Google:", data.error);
+      throw new Error(data.error.message);
+    }
+    
+    if (data.candidates && data.candidates.content.parts.text) {
+      setAnalisisIA(data.candidates.content.parts.text);
+    } else {
+      throw new Error("Respuesta inválida del modelo.");
+    }
+
+  } catch (error) {
+    console.error("Error al consultar Gemini:", error);
+    setAnalisisIA(`Error: ${error.message}. Verifica que estás usando la clave de geomarket-predictor.`);
+  } finally {
+    setCargandoIA(false);
+  }
+};
+
   const handleAudit = () => {
     setIsAnalyzing(true);
     
@@ -275,6 +344,8 @@ export default function App() {
       iso: ISO_VAL
     };
     setHistorialConsultas([nuevaConsulta, ...historialConsultas]);
+    
+    ejecutarAuditoriaIA();
     
     setActiveTab('mapa'); 
     setTimeout(() => setIsAnalyzing(false), 2500);
@@ -329,7 +400,7 @@ export default function App() {
           
           <button 
             onClick={sembrarDatosJalisco} 
-            className="fixed bottom-4 right-4 z-50 px-4 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-teal-950/50 hover:scale-105 active:scale-95 transition-all"
+            className="fixed bottom-4 right-4 z-50 px-4 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-teal-950/50 hover:scale-105 active:scale-95 transition-all cursor-pointer"
           >
             ⚙️ Inicializar Base Jalisco
           </button>
@@ -347,19 +418,19 @@ export default function App() {
             <div className="flex items-center gap-6">
               <button 
                 onClick={() => setDarkMode(!darkMode)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${darkMode ? 'bg-slate-800 border-slate-600 text-yellow-400' : 'bg-slate-100 border-slate-200 text-slate-500'}`}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all cursor-pointer ${darkMode ? 'bg-slate-800 border-slate-600 text-yellow-400' : 'bg-slate-100 border-slate-200 text-slate-500'}`}
               >
                 <span className="text-xs">{darkMode ? '🌙' : '☀️'}</span>
                 <span className="text-[9px] font-black uppercase tracking-widest">{darkMode ? 'Oscuro' : 'Claro'}</span>
               </button>
 
               {!isLoggedIn ? (
-                <button onClick={() => setView('login')} className="text-[11px] font-black text-slate-500 uppercase tracking-widest hover:text-teal-600 transition-colors">Acceso Clientes</button>
+                <button onClick={() => setView('login')} className="text-[11px] font-black text-slate-500 uppercase tracking-widest hover:text-teal-600 transition-colors cursor-pointer">Acceso Clientes</button>
               ) : (
                 <div className="flex items-center gap-4">
                   <span className="text-[10px] font-black text-teal-600 bg-teal-50 px-3 py-1 rounded-full uppercase tracking-widest">Premium</span>
-                  <button onClick={descargarReporte} className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest transition-all ${darkMode ? 'bg-slate-700 text-white hover:bg-slate-600' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'}`}>PDF</button>
-                  <button onClick={() => setIsLoggedIn(false)} className="text-[10px] font-black text-rose-400 uppercase tracking-widest hover:text-rose-600 transition-colors">Salir</button>
+                  <button onClick={descargarReporte} className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest transition-all cursor-pointer ${darkMode ? 'bg-slate-700 text-white hover:bg-slate-600' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'}`}>PDF</button>
+                  <button onClick={() => setIsLoggedIn(false)} className="text-[10px] font-black text-rose-400 uppercase tracking-widest hover:text-rose-600 transition-colors cursor-pointer">Salir</button>
                 </div>
               )}
 
@@ -401,7 +472,7 @@ export default function App() {
                     <label className="text-[9px] font-black text-slate-400 uppercase ml-3 tracking-widest">Agresividad Local</label>
                     <div className={`flex gap-2 p-1.5 rounded-2xl border shadow-sm ${darkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white/50 border-teal-100'}`}>
                       {['Baja', 'Normal', 'Alta'].map((lvl) => (
-                        <button key={lvl} type="button" onClick={() => setAgresividad(lvl)} className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${agresividad === lvl ? 'bg-teal-500 text-white shadow-md' : darkMode ? 'text-slate-500 hover:bg-slate-800' : 'text-slate-400 hover:bg-teal-50'}`}>
+                        <button key={lvl} type="button" onClick={() => setAgresividad(lvl)} className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase transition-all cursor-pointer ${agresividad === lvl ? 'bg-teal-500 text-white shadow-md' : darkMode ? 'text-slate-500 hover:bg-slate-800' : 'text-slate-400 hover:bg-teal-50'}`}>
                           {lvl}
                         </button>
                       ))}
@@ -422,15 +493,31 @@ export default function App() {
                 </div>
               </section>
 
-              <button onClick={handleAudit} disabled={isAnalyzing} className={`w-full py-5 rounded-[2rem] font-black uppercase text-[11px] tracking-widest transition-all active:scale-95 shadow-xl ${darkMode ? 'bg-teal-600 hover:bg-teal-500 text-white shadow-teal-900/20' : 'bg-slate-900 hover:bg-teal-600 text-white shadow-slate-300'}`}>
+              <button onClick={handleAudit} disabled={isAnalyzing || cargandoIA} className={`w-full py-5 rounded-[2rem] font-black uppercase text-[11px] tracking-widest transition-all active:scale-95 shadow-xl cursor-pointer ${darkMode ? 'bg-teal-600 hover:bg-teal-500 text-white shadow-teal-900/20' : 'bg-slate-900 hover:bg-teal-600 text-white shadow-slate-300'}`}>
                 {isAnalyzing ? "PROCESANDO CAPAS..." : "EJECUTAR AUDITORÍA"}
               </button>
+
+              {/* SECCIÓN INTERACTIVA DE CEREBRO IA (PANEL GLASSMORPHISM) */}
+              {analisisIA && (
+                <div className="p-5 rounded-[2rem] border animate-in fade-in slide-in-from-bottom-3 duration-500 bg-white/70 border-white/50 shadow-lg dark:bg-slate-950/60 dark:border-slate-800/80">
+                  <div className="flex items-center gap-2.5 mb-3">
+                    <span className="text-sm animate-bounce">🧠</span>
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-emerald-800 dark:text-teal-400">
+                      Análisis de Expansión Gemini
+                    </h3>
+                    {cargandoIA && <div className="w-2 h-2 rounded-full bg-teal-500 animate-ping ml-auto" />}
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300 whitespace-pre-line leading-relaxed max-h-60 overflow-y-auto pr-1">
+                    {analisisIA}
+                  </p>
+                </div>
+              )}
             </aside>
 
             <main className={`backdrop-blur-md p-4 rounded-[4rem] shadow-2xl border min-h-[600px] flex flex-col overflow-hidden transition-all duration-500 ${darkMode ? 'bg-slate-900/95 border-slate-800 shadow-black/40' : 'bg-white/95 border-white'}`}>
               <nav className={`flex gap-2 p-2 rounded-full mb-6 mx-4 mt-2 border flex-shrink-0 overflow-x-auto ${darkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-100/50 border-slate-200/50'}`}>
                 {['variables', 'mapa', 'comparativa', 'competencia', 'perfil'].map((t) => (
-                  <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-4 px-3 rounded-2xl font-black text-[10px] uppercase transition-all whitespace-nowrap ${activeTab === t ? "bg-teal-500 text-white shadow-lg shadow-teal-500/30 scale-[1.02]" : darkMode ? "text-slate-500 hover:text-slate-300" : "text-slate-400"}`}>
+                  <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-4 px-3 rounded-2xl font-black text-[10px] uppercase transition-all whitespace-nowrap cursor-pointer ${activeTab === t ? "bg-teal-500 text-white shadow-lg shadow-teal-500/30 scale-[1.02]" : darkMode ? "text-slate-500 hover:text-slate-300" : "text-slate-400"}`}>
                     {t === 'competencia' ? `competencia (${negocios.length})` : t === 'perfil' ? (isLoggedIn ? '👤 Perfil' : '🔐 Iniciar Sesión') : t}
                   </button>
                 ))}
@@ -616,7 +703,7 @@ export default function App() {
                       </p>
                       <button 
                         onClick={() => setView('login')} 
-                        className="px-8 py-4 bg-teal-500 hover:bg-teal-400 text-white font-black text-[11px] uppercase tracking-widest rounded-2xl shadow-xl shadow-teal-500/20 active:scale-95 transition-all"
+                        className="px-8 py-4 bg-teal-500 hover:bg-teal-400 text-white font-black text-[11px] uppercase tracking-widest rounded-2xl shadow-xl shadow-teal-500/20 active:scale-95 transition-all cursor-pointer"
                       >
                         Ir al Inicio de Sesión
                       </button>
@@ -678,7 +765,7 @@ export default function App() {
                                   <span className="text-[7px] text-slate-400 font-black uppercase tracking-widest">ISO Score</span>
                                 </div>
 
-                                <button onClick={() => cargarConsultaHistorial(item)} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all ${darkMode ? 'border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>
+                                <button onClick={() => cargarConsultaHistorial(item)} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all cursor-pointer ${darkMode ? 'border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>
                                   Recargar
                                 </button>
                               </div>
@@ -829,10 +916,10 @@ function Slider({ label, value, setValue, max, unit = "", darkMode }) {
 
 function MetricaInfo({ label, desc, color, darkMode }) {
   return (
-    <div className={`p-4 rounded-2xl border transition-all ${darkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+    <div className="p-4 rounded-2xl border bg-white dark:bg-slate-900/50 border-slate-100 dark:border-slate-800 shadow-sm transition-all">
       <div className="flex items-center gap-3 mb-1">
         <div className={`w-2 h-2 rounded-full ${color}`}></div>
-        <span className={`text-[10px] font-black uppercase tracking-tighter ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{label}</span>
+        <span className="text-[10px] font-black uppercase tracking-tighter text-slate-700 dark:text-slate-300">{label}</span>
       </div>
       <p className="text-[10px] text-slate-500 leading-relaxed font-medium">{desc}</p>
     </div>
@@ -952,7 +1039,6 @@ function Tarjeta3D({ children, className = "" }) {
     const centerX = left + width / 2;
     const centerY = top + height / 2;
     
-    // El divisor (30) controla qué tan agresivo es el movimiento.
     const rotateX = -((e.clientY - centerY) / 30);
     const rotateY = (e.clientX - centerX) / 30;
 

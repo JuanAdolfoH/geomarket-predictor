@@ -1,62 +1,91 @@
-import { db } from '../firebase';
-import { collection, doc, setDoc } from 'firebase/firestore';
+import { collection, writeBatch, doc } from 'firebase/firestore';
+import { db } from '../firebase'; 
+import Papa from 'papaparse';
 
-// Base de datos de prueba para Jalisco basada en las 6 variables del modelo técnico
-const coloniasMuestra = [
-  {
-    id: "zapopan_providencia",
-    municipio: "Zapopan",
-    colonia: "Providencia",
-    tipo_zona: "urbano",
-    X1_poblacion: 45000,          // Población objetivo (Residentes + Flotantes) [cite: 21]
-    X2_gasto_aspiracional: 85,    // Escala 0-100: Relación ingreso vs gasto por estatus [cite: 21]
-    X3_saturacion: 18,            // Cantidad de negocios del mismo giro [cite: 21]
-    X4_insatisfaccion: 4.2,       // Promedio de estrellas de la competencia (Google Maps) [cite: 21]
-    X5_momentum_digital: 90,      // Tasa de crecimiento de menciones en redes sociales [cite: 21]
-    X6_accesibilidad: 75          // Facilidad de llegada y flujo peatonal [cite: 21]
-  },
-  {
-    id: "guadalajara_centro",
-    municipio: "Guadalajara",
-    colonia: "Centro",
-    tipo_zona: "urbano",
-    X1_poblacion: 120000,
-    X2_gasto_aspiracional: 40,    // Gasto más orientado a la necesidad real [cite: 9]
-    X3_saturacion: 45,            // Zona comercial altamente saturada
-    X4_insatisfaccion: 3.5,       // Muchas quejas / Malas reseñas (Mayor oportunidad de mercado) [cite: 21]
-    X5_momentum_digital: 30,
-    X6_accesibilidad: 95          // Máxima confluencia peatonal y transporte público
-  },
-  {
-    id: "mazamitla_centro",
-    municipio: "Mazamitla",
-    colonia: "Centro",
-    tipo_zona: "turistico",       // Detona el cambio dinámico de pesos beta en el modelo [cite: 21]
-    X1_poblacion: 25000,          // Densidad base baja, pero con picos por turismo flotante [cite: 21]
-    X2_gasto_aspiracional: 70,
-    X3_saturacion: 5,             // Muy baja competencia directa (Potencial Océano Azul) [cite: 5]
-    X4_insatisfaccion: 4.0,
-    X5_momentum_digital: 80,      // Zona altamente instagrameable y de impacto digital
-    X6_accesibilidad: 60
-  }
-];
+// Función auxiliar para darle un respiro a Firebase entre lotes masivos
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Función automatizada para sembrar los datos en Firestore
- */
 export const sembrarDatosJalisco = async () => {
-  try {
-    const territorioRef = collection(db, "jalisco_territorio");
+  console.log("1. Iniciando descarga del CSV local...");
 
-    for (const zona of coloniasMuestra) {
-      // Usamos setDoc con ID fijo para no duplicar documentos si se presiona más de una vez
-      await setDoc(doc(territorioRef, zona.id), zona);
-      console.log(`✅ Zona sincronizada en la nube: ${zona.colonia}, ${zona.municipio}`);
+  try {
+    const response = await fetch('/jalisco_ligero.csv');
+    if (!response.ok) {
+      throw new Error("No se pudo encontrar el archivo jalisco_ligero.csv");
     }
-    
-    alert("🚀 ¡Colección 'jalisco_territorio' poblada con éxito en tu Firestore Database!");
+    const csvText = await response.text();
+
+    console.log("2. Archivo leído, procesando datos con PapaParse...");
+
+    Papa.parse(csvText, {
+      header: true, 
+      skipEmptyLines: true,
+      complete: async (results) => {
+        const data = results.data;
+        console.log(`Se encontraron ${data.length} registros en total. Preparando subida masiva segura...`);
+
+        // Partimos en bloques de 500
+        const chunks = chunkArray(data, 500);
+        let totalSubidos = 0;
+
+        for (let i = 0; i < chunks.length; i++) {
+          const batch = writeBatch(db);
+          const chunk = chunks[i];
+
+          chunk.forEach((negocio) => {
+            const nombreRaw = negocio["nombre "]; 
+            const latRaw = negocio["lat"];
+            const longRaw = negocio["long"]; 
+
+            // Filtro de filas vacías o títulos basura
+            if (!nombreRaw || nombreRaw.trim() === "" || nombreRaw.includes("jalisco_ligero")) {
+              return; 
+            }
+
+            const docRef = doc(collection(db, 'negocios_jalisco')); 
+            
+            batch.set(docRef, {
+              nombre: nombreRaw.trim(),
+              scian: negocio.scian || "",
+              giro_descripcion: negocio.giro_descripcion || "",
+              tamano: negocio.tamano || "",
+              municipio: negocio.municipio ? negocio.municipio.trim() : "",
+              latitud: parseFloat(latRaw) || 0,
+              longitud: parseFloat(longRaw) || 0 
+            });
+          });
+
+          // 🚀 Enviamos el lote actual a Firestore
+          await batch.commit();
+          totalSubidos += chunk.length;
+          console.log(`✅ [Lote ${i + 1}/${chunks.length}] Guardados reales en Firestore: ${totalSubidos} negocios...`);
+
+          // ⏳ TRUCO CRÍTICO: Esperamos 300 milisegundos antes del siguiente lote para no saturar Firebase
+          await delay(300);
+        }
+
+        console.log("🚀 ¡Carga masiva completada con éxito en el servidor!");
+        alert(`¡Éxito total! Se sembraron ${totalSubidos} registros de manera segura en Firestore.`);
+      },
+      error: (error) => {
+        console.error("Error analizando el CSV:", error);
+        alert("Hubo un error leyendo el CSV.");
+      }
+    });
+
   } catch (error) {
-    console.error("Error al inyectar datos en Firebase:", error);
-    alert(`❌ Fallo en la sincronización: ${error.message}`);
+    console.error("Error intentando leer el archivo:", error);
+    alert("Error de inicialización: " + error.message);
   }
 };
+
+function chunkArray(myArray, chunk_size) {
+    let index = 0;
+    let arrayLength = myArray.length;
+    let tempArray = [];
+    for (index = 0; index < arrayLength; index += chunk_size) {
+        let myChunk = myArray.slice(index, index + chunk_size);
+        tempArray.push(myChunk);
+    }
+    return tempArray;
+}
