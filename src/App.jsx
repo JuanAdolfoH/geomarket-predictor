@@ -1,24 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-// Componentes para Gráficos e Indicadores (Recharts)
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer, Radar as RadarRecharts, Tooltip } from 'recharts';
-// Componentes para el Mapa Geográfico (React Leaflet)
-import { MapContainer, TileLayer, CircleMarker } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-// Recursos de Diseño y Notificaciones Visuales
 import FondoApp from './assets/FondoApp.png';
 import { Toaster } from 'react-hot-toast';
-// Vistas de Control de Acceso de Usuarios
 import Login from './Login';
 import Register from './Register';
-// Librerías para Renderizado y Descarga de Reportes PDF
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import GenerativeBackground from './GenerativeBackground';
-// Motores del Algoritmo e Inteligencia de Negocios de Jalisco
 import { analizarZonaJalisco } from './services/marketAnalysis';
 import { sembrarDatosJalisco } from './services/seedJalisco';
-// Integración Oficial con el SDK de Google Gemini
-import { GoogleGenAI } from '@google/genai';
+import { HiOutlineDocumentReport } from "react-icons/hi";
+
+// IMPORTAMOS SUPABASE
+import { supabase } from './supabaseClient';
 
 const datosJalisco = {
   "ACATIC": ["Centro", "Tierras Coloradas", "La Joya", "El Refugio"],
@@ -154,6 +150,7 @@ const opcionesGiros = {
   "TECNOLOGÍA Y DIGITAL": ["Desarrollo de Software", "Ciber Café", "Soporte Técnico", "Venta de Accesorios Gamer", "Impresión 3D", "Seguridad y Cámaras"]
 };
 
+
 export default function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [view, setView] = useState('app'); 
@@ -181,11 +178,11 @@ export default function App() {
   const [reporteISO, setReporteISO] = useState(null);
   const [cargandoAnalisis, setCargandoAnalisis] = useState(false);
   const [negocios, setNegocios] = useState([]); 
+  const [competenciaReal, setCompetenciaReal] = useState([]); // Guardará los datos reales de Supabase
 
-  // Estados para el Consultor IA de Gemini
   const [analisisIA, setAnalisisIA] = useState("");
   const [cargandoIA, setCargandoIA] = useState(false);
-
+  
   const [historialConsultas, setHistorialConsultas] = useState([
     { id: 1, fecha: "Hoy, 14:32", municipio: "ZAPOPAN", colonia: "Puerta de Hierro", giro: "SALUD Y BIENESTAR", subGiro: "Consultorio Dental", iso: 85 },
     { id: 2, fecha: "Ayer, 19:15", municipio: "GUADALAJARA", colonia: "Americana", giro: "GASTRONOMÍA", subGiro: "Cafetería", iso: 72 },
@@ -268,68 +265,82 @@ export default function App() {
 
   const ISO_VAL = reporteISO ? (reporteISO.iso || 77) : 77; 
 
-const ejecutarAuditoriaIA = async () => {
-  // Aseguramos que existan los datos mínimos seleccionados en tu formulario
-  if (!municipio || !giro) return;
-  
-  setCargandoIA(true);
-  setAnalisisIA("Iniciando conexión segura con el analista de IA...");
-  
-  try {
-    // Pega aquí la clave que acabas de copiar (la que termina en Jooo)
-    const apiKey = "AIzaSyBv0MEQC4IB0I21xIe-Cfas8YUEFzEJooo".trim(); 
+  const ejecutarAuditoriaIA = async () => {
+    if (!municipio || !giro) return;
     
-    // Endpoint oficial v1 estable
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-    const prompt = `Actúa como un consultor senior de Geomarketing de Business Intelligence experto en el mercado mexicano. 
-    Analiza la viabilidad de expansión comercial de un negocio en el estado de Jalisco con estos datos seleccionados:
-    - Municipio: ${municipio}
-    - Colonia o Fraccionamiento: ${colonia || 'General'}
-    - Categoría / Giro: ${giro}
-    - Subgiro Comercial: ${subGiro}
-    - Presupuesto de Inversión: ${presupuesto}
-    - Perfil del Cliente Meta (Target): ${target}
-    - Nivel de Agresividad del Local: ${agresividad}
-    - Horario de Apertura: ${horario}
-    - Puntuación ISO Calculada por Algoritmo: ${ISO_VAL || '65'}%
-
-    Por favor redacta una auditoría ejecutiva concisa y sumamente profesional estructurada en viñetas claras con los siguientes puntos:
-    1. 🎯 EVALUACIÓN DE OPORTUNIDAD (¿La zona amerita la inversión basado en la puntuación ISO?).
-    2. 📈 3 VENTAJAS ESTRATÉGICAS que ofrece el municipio de ${municipio} para el sector de ${giro}.
-    3. ⚠️ 3 RIESGOS CRÍTICOS O COMPETENCIA a tomar en cuenta.
-    4. 🚀 RECOMENDACIÓN PRESCRIPTIVA OPERATIVA (Horarios ideales o táctica urbana para destacar en el corto plazo).`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }]
-      })
-    });
-
-    const data = await response.json();
+    setCargandoIA(true);
+    setAnalisisIA("Conectando con Supabase y extrayendo datos reales...");
     
-    if (data.error) {
-      console.error("Error devuelto por la API de Google:", data.error);
-      throw new Error(data.error.message);
+    try {
+      // CONSULTA REAL CON COORDENADAS INCLUIDAS
+      const { data: datosMunicipio, error: supabaseError } = await supabase
+        .from('competencia_real') 
+        .select('nom_estab, nombre_act, municipio, per_ocu, latitud, longitud') 
+        .ilike('municipio', `%${municipio}%`) 
+        .ilike('nombre_act',`%${ subGiro || giro}%`)
+        .limit(100); 
+
+      if (supabaseError) throw supabaseError;
+
+      // Guardamos la competencia real en el estado para el mapa y la lista
+      setCompetenciaReal(datosMunicipio || []);
+
+      const contextoSupabase = datosMunicipio && datosMunicipio.length > 0 
+        ? JSON.stringify(datosMunicipio.slice(0, 8), null, 2)
+        : "No se encontraron registros específicos en Supabase para este municipio.";
+
+      setAnalisisIA("Datos comerciales indexados. Consultando a Ollama local...");
+
+      const prompt = `Actúa como un consultor senior de Geomarketing redacta todo estrictamente en español de Business Intelligence experto en el mercado mexicano. 
+      Analiza la viabilidad de expansion comercial de un negocio en el estado de Jalisco con estos datos seleccionados en la interfaz :
+      - Municipio: ${municipio}
+      - Colonia o Fraccionamiento: ${colonia || 'General'}
+      - Categoría / Giro: ${giro}
+      - Subgiro Comercial: ${subGiro}
+      - Presupuesto de Inversión: ${presupuesto}
+      - Perfil del Cliente Meta (Target): ${target}
+      - Nivel de Agresividad del Local: ${agresividad}
+      - Horario de Apertura: ${horario}
+      - Puntuación ISO Calculada por Algoritmo: ${ISO_VAL || '65'}%
+
+      =========================================
+      DATOS REALES EXTRAÍDOS DE SUPABASE PARA EL MUNICIPIO DE ${municipio.toUpperCase()}:
+      ${contextoSupabase}
+      =========================================
+
+      Por favor redacta una auditoría ejecutiva concisa y sumamente profesional estructurada en viñetas claras con los siguientes puntos:
+      1. 🎯 EVALUACIÓN DE OPORTUNIDAD (Cruza la puntuación ISO con los datos de la BD adjuntos arriba).
+      2. 📈 3 VENTAJAS ESTRATÉGICAS específicas basadas en el contexto de la zona.
+      3. ⚠️ 3 RIESGOS CRÍTICOS O COMPETENCIA a tomar en cuenta.
+      4. 🚀 RECOMENDACIÓN PRESCRIPTIVA OPERATIVA (Horarios ideales o táctica urbana para destacar en el corto plazo).`;
+
+      const responseOllama = await fetch('http://localhost:11434/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: "llama3:latest", 
+          prompt: prompt,
+          stream: false    
+        })
+      });
+
+      const dataOllama = await responseOllama.json();
+      
+      if (dataOllama.response) {
+        setAnalisisIA(dataOllama.response);
+      } else {
+        throw new Error("Ollama no devolvió una respuesta válida.");
+      }
+
+    } catch (error) {
+      console.error("Error en el flujo de Ollama + Supabase:", error);
+      setAnalisisIA(`Error en el sistema: ${error.message}. Verifica tu conexión a Supabase y Ollama.`);
+    } finally {
+      setCargandoIA(false);
     }
-    
-    if (data.candidates && data.candidates.content.parts.text) {
-      setAnalisisIA(data.candidates.content.parts.text);
-    } else {
-      throw new Error("Respuesta inválida del modelo.");
-    }
-
-  } catch (error) {
-    console.error("Error al consultar Gemini:", error);
-    setAnalisisIA(`Error: ${error.message}. Verifica que estás usando la clave de geomarket-predictor.`);
-  } finally {
-    setCargandoIA(false);
-  }
-};
+  };
 
   const handleAudit = () => {
     setIsAnalyzing(true);
@@ -380,20 +391,23 @@ const ejecutarAuditoriaIA = async () => {
     { subject: 'ISO', A: ISO_VAL },
   ];
 
+  // Calculamos dinámicamente el centro del mapa según la competencia real encontrada
+  const primerNegocioConCoordenadas = competenciaReal.find(n => n.latitud && n.longitud);
+  const mapaCentro = primerNegocioConCoordenadas 
+    ? [primerNegocioConCoordenadas.latitud, primerNegocioConCoordenadas.longitud] 
+    : [20.674, -103.361]; // Default Guadalajara
+
   if (view === 'login') return <Login onLogin={() => { setIsLoggedIn(true); setView('app'); }} onBack={() => setView('app')} onGoToRegister={() => setView('register')} />;
   if (view === 'register') return <Register onBack={() => setView('login')} onRegisterSuccess={() => { setIsLoggedIn(true); setView('app'); }} />;
 
   return (
     <>
-      {/* CAPA 1: EL FONDO */}
       <div className="fixed top-0 left-0 w-full h-full z-0 pointer-events-none">
         <GenerativeBackground darkMode={darkMode} />
       </div>
 
-      {/* CAPA 2: TU APLICACIÓN */}
       <div className="relative z-10 h-screen overflow-y-scroll snap-y snap-mandatory scroll-smooth bg-transparent">
         
-        {/* SECCIÓN 1: APP PRINCIPAL */}
         <section className="h-screen w-full snap-start overflow-y-auto flex flex-col items-center p-4 md:p-10 font-sans bg-cover bg-fixed bg-center relative transition-all duration-500" style={{ backgroundImage: `url(${FondoApp})` }}>
           
           <Toaster position="top-right" reverseOrder={false} />
@@ -497,19 +511,60 @@ const ejecutarAuditoriaIA = async () => {
                 {isAnalyzing ? "PROCESANDO CAPAS..." : "EJECUTAR AUDITORÍA"}
               </button>
 
-              {/* SECCIÓN INTERACTIVA DE CEREBRO IA (PANEL GLASSMORPHISM) */}
               {analisisIA && (
-                <div className="p-5 rounded-[2rem] border animate-in fade-in slide-in-from-bottom-3 duration-500 bg-white/70 border-white/50 shadow-lg dark:bg-slate-950/60 dark:border-slate-800/80">
-                  <div className="flex items-center gap-2.5 mb-3">
-                    <span className="text-sm animate-bounce">🧠</span>
-                    <h3 className="text-[10px] font-black uppercase tracking-widest text-emerald-800 dark:text-teal-400">
-                      Análisis de Expansión Gemini
-                    </h3>
-                    {cargandoIA && <div className="w-2 h-2 rounded-full bg-teal-500 animate-ping ml-auto" />}
+                <div className="p-6 rounded-[2.5rem] border relative overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 bg-white/70 border-white/40 shadow-xl backdrop-blur-xl dark:bg-slate-950/60 dark:border-slate-800/80">
+                  <div className="absolute -top-10 -right-10 w-20 h-20 rounded-full bg-cyan-400/20 blur-xl pointer-events-none"></div>
+                  
+                  <div className="flex items-center gap-3 mb-4 pb-2 border-b border-slate-200/40 dark:border-slate-800/60">
+                    <div className="bg-cyan-500/10 p-2 rounded-xl border border-cyan-500/20 dark:bg-teal-500/20">
+                      <HiOutlineDocumentReport className="text-xl text-cyan-600 dark:text-teal-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-900 dark:text-white leading-none">
+                        Auditoría de Expansión
+                      </h3>
+                      <p className="text-[8px] font-bold uppercase tracking-wider text-cyan-600 dark:text-teal-400 mt-1">
+                        Consultor Local • Llama3
+                      </p>
+                    </div>
+                    {cargandoIA && (
+                      <div className="flex gap-1 ml-auto">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-bounce [animation-delay:-0.3s]"></span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-bounce [animation-delay:-0.15s]"></span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-bounce"></span>
+                      </div>
+                    )}
                   </div>
-                  <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300 whitespace-pre-line leading-relaxed max-h-60 overflow-y-auto pr-1">
-                    {analisisIA}
-                  </p>
+
+                  <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1 text-slate-800 dark:text-slate-200">
+                    {analisisIA.split('\n').map((parrafo, index) => {
+                      const textoLimpio = parrafo.replace(/\*+/g, '').trim();
+                      if (!textoLimpio) return null;
+
+                      if (/^\d+\./.test(textoLimpio)) {
+                        const [numero, ...restoMensaje] = textoLimpio.split('.');
+                        return (
+                          <div 
+                            key={index} 
+                            className="p-3.5 rounded-2xl border transition-all duration-300 hover:scale-[1.01] bg-white/50 border-slate-200/60 shadow-sm dark:bg-slate-900/40 dark:border-slate-800/50 flex gap-3 items-start"
+                          >
+                            <span className="font-black text-xs text-cyan-600 dark:text-teal-400 bg-cyan-50 dark:bg-slate-900 px-2 py-0.5 rounded-lg border border-cyan-100 dark:border-slate-800">
+                              {numero}
+                            </span>
+                            <p className="text-[10px] font-bold leading-relaxed text-slate-900 dark:text-slate-100 m-0 flex-1">
+                              {restoMensaje.join('.').trim()}
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <p key={index} className="text-[10px] font-semibold leading-relaxed tracking-wide text-slate-600 dark:text-slate-400 pl-1">
+                          {textoLimpio}
+                        </p>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </aside>
@@ -518,7 +573,7 @@ const ejecutarAuditoriaIA = async () => {
               <nav className={`flex gap-2 p-2 rounded-full mb-6 mx-4 mt-2 border flex-shrink-0 overflow-x-auto ${darkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-100/50 border-slate-200/50'}`}>
                 {['variables', 'mapa', 'comparativa', 'competencia', 'perfil'].map((t) => (
                   <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-4 px-3 rounded-2xl font-black text-[10px] uppercase transition-all whitespace-nowrap cursor-pointer ${activeTab === t ? "bg-teal-500 text-white shadow-lg shadow-teal-500/30 scale-[1.02]" : darkMode ? "text-slate-500 hover:text-slate-300" : "text-slate-400"}`}>
-                    {t === 'competencia' ? `competencia (${negocios.length})` : t === 'perfil' ? (isLoggedIn ? '👤 Perfil' : '🔐 Iniciar Sesión') : t}
+                    {t === 'competencia' ? `competencia (${competenciaReal.length > 0 ? competenciaReal.length : negocios.length})` : t === 'perfil' ? (isLoggedIn ? '👤 Perfil' : '🔐 Iniciar Sesión') : t}
                   </button>
                 ))}
               </nav>
@@ -572,9 +627,32 @@ const ejecutarAuditoriaIA = async () => {
                   <div className="animate-in fade-in duration-700 space-y-6">
                     <div className={`h-[380px] w-full rounded-[3.5rem] overflow-hidden border-[8px] relative group transition-colors ${darkMode ? 'border-slate-800 shadow-inner' : 'border-slate-50 shadow-inner'}`}>
                       {isAnalyzing && <div className="scanner-line"></div>}
-                      <MapContainer center={[20.674, -103.361]} zoom={13} style={{ height: "100%", width: "100%", zIndex: 1 }}>
+                      {/* El MapContainer se refrescará con un centro dinámico cada vez que cambie el municipio o la cantidad de competencia real */}
+                      <MapContainer key={`${municipio}-${competenciaReal.length}`} center={mapaCentro} zoom={12} style={{ height: "100%", width: "100%", zIndex: 1 }}>
                         <TileLayer url={darkMode ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"} />
-                        <CircleMarker center={[20.674, -103.361]} radius={14} pathOptions={{fillColor: '#14b8a6', color: 'white', weight: 4, fillOpacity: 0.9}} />
+                        
+                        {/* Marcador estimado del centro seleccionado */}
+                        <CircleMarker center={mapaCentro} radius={14} pathOptions={{fillColor: '#14b8a6', color: 'white', weight: 4, fillOpacity: 0.9}} />
+                        
+                        {/* ITERAMOS Y PINTAMOS LOS NEGOCIOS REALES DE SUPABASE EN EL MAPA */}
+                        {competenciaReal.map((negocio, i) => (
+                          negocio.latitud && negocio.longitud && (
+                            <CircleMarker 
+                              key={i} 
+                              center={[negocio.latitud, negocio.longitud]} 
+                              radius={8} 
+                              pathOptions={{ fillColor: '#f59e0b', color: 'white', weight: 2, fillOpacity: 0.9 }}
+                            >
+                              <Popup>
+                                <div className="text-slate-900 font-sans p-1">
+                                  <strong className="text-xs uppercase font-black block text-teal-600">{negocio.nom_estab}</strong>
+                                  <span className="text-[10px] font-bold block mt-1 text-slate-700">Actividad: {negocio.nombre_act}</span>
+                                  <span className="text-[9px] bg-slate-100 text-slate-800 px-2 py-0.5 rounded mt-1.5 inline-block font-black uppercase">Personal: {negocio.per_ocu}</span>
+                                </div>
+                              </Popup>
+                            </CircleMarker>
+                          )
+                        ))}
                       </MapContainer>
                     </div>
                     
@@ -615,7 +693,34 @@ const ejecutarAuditoriaIA = async () => {
                     </div>
                     
                     <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-                      {negocios.length > 0 ? (
+                      {/* DESPLEGAMOS LA COMPETENCIA REAL DE SUPABASE SI EXISTE, SI NO EVALUAMOS LOS NEGOCIOS LOCALES */}
+                      {competenciaReal.length > 0 ? (
+                        competenciaReal.map((item, i) => (
+                          <div key={i} className={`flex flex-col justify-between p-6 rounded-[2.5rem] border transition-all hover:shadow-md ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-white shadow-sm'}`}>
+                            <div>
+                              <div className="flex justify-between items-start gap-4 mb-3">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs border ${darkMode ? 'bg-slate-900 border-slate-700 text-teal-400' : 'bg-white border-slate-100 text-teal-600 shadow-sm'}`}>{i + 1}</div>
+                                  <p className={`font-black text-xs uppercase tracking-tight ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>{item.nom_estab}</p>
+                                </div>
+                                <span className="bg-teal-500/10 text-teal-600 px-2 py-1 rounded-xl text-[9px] font-black whitespace-nowrap flex items-center gap-1 border border-teal-500/20">
+                                  Real 🏢
+                                </span>
+                              </div>
+                              
+                              <p className="text-[10px] text-slate-400 uppercase font-semibold">Actividad: <span className={darkMode ? 'text-slate-300' : 'text-slate-600'}>{item.nombre_act || giro}</span></p>
+                              <p className="text-[10px] text-slate-400 uppercase font-semibold mt-0.5">Tamaño: <span className={darkMode ? 'text-slate-300' : 'text-slate-600'}>{item.per_ocu || "N/D"}</span></p>
+                              <p className="text-[10px] text-slate-400 uppercase font-semibold mt-0.5">Municipio: <span className={darkMode ? 'text-slate-300' : 'text-slate-600'}>{item.municipio}</span></p>
+                            </div>
+
+                            <div className="mt-4 pt-3 border-t border-slate-200/10 flex justify-between items-center">
+                              <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-teal-500/10 text-teal-400">
+                                Registro Supabase
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                      ) : negocios.length > 0 ? (
                         negocios.map((item, i) => (
                           <div key={item.id || i} className={`flex flex-col justify-between p-6 rounded-[2.5rem] border transition-all hover:shadow-md ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-white shadow-sm'}`}>
                             <div>
@@ -642,7 +747,7 @@ const ejecutarAuditoriaIA = async () => {
                         ))
                       ) : (
                         <div className="col-span-full text-center py-12 text-xs font-medium text-slate-400 uppercase tracking-widest">
-                          No se detectaron comercios activos en el buffer actual.
+                          No se detectaron comercios activos en el buffer actual. Ejecuta la auditoría para indexar Supabase.
                         </div>
                       )}
                     </div>
@@ -781,7 +886,6 @@ const ejecutarAuditoriaIA = async () => {
             </main>
           </div>
 
-          {/* ESTE COMPONENTE ESTÁ INVISIBLE (USADO SOLO PARA PDF) */}
           <ReporteEstructurado 
             ref={reportRef} municipio={municipio} colonia={colonia} giro={giro} subGiro={subGiro} 
             poblacion={poblacion} momentum={momentum} saturacion={saturacion} insatisfaccion={insatisfaccion} 
@@ -789,7 +893,6 @@ const ejecutarAuditoriaIA = async () => {
           />
         </section>
 
-        {/* SECCIÓN 2: EXPLICACIÓN DE CÓMO FUNCIONA LA APP */}
         <section className="h-screen w-full snap-start flex items-center justify-center bg-slate-700/10 p-6 md:p-12 text-white select-none relative overflow-hidden">
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-teal-500/10 rounded-full blur-[100px] pointer-events-none"></div>
           <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none"></div>
@@ -804,7 +907,7 @@ const ejecutarAuditoriaIA = async () => {
                 <p className="text-slate-400 text-xs md:text-sm leading-relaxed font-medium">
                   Geomarket Predictor evalúa de forma cruzada múltiples capas geo-estadísticas. La plataforma automatiza ecuaciones lineales basándose en la concentración de competidores directos y flujos peatonales dinámicos.
                 </p>
-              </div>
+             </div>
 
               <div className="h-72 md:h-80 bg-slate-950 border border-slate-800/80 rounded-[2rem] p-6 flex flex-col justify-between relative overflow-hidden shadow-inner">
                 <div className="absolute inset-0 bg-gradient-to-tr from-teal-500/5 via-transparent to-transparent"></div>
@@ -819,18 +922,16 @@ const ejecutarAuditoriaIA = async () => {
                 </div>
                 <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest text-center">Simulación de Capas Territoriales</p>
               </div>
-
             </div>
           </Tarjeta3D>
         </section>
 
-        {/* SECCIÓN 3: BENEFICIOS CORPORATIVOS */}
         <section className="h-screen w-full snap-start flex items-center justify-center bg-teal-800/10 p-6 md:p-12 text-white select-none relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-teal-900/50 via-teal-950 to-teal-950 pointer-events-none"></div>
           
           <Tarjeta3D className="w-full max-w-4xl z-10">
             <div className="bg-teal-900/40 border border-teal-500/50 p-10 rounded-3xl shadow-[0_0_40px_rgba(20,184,166,0.5)] backdrop-blur-md text-center space-y-8">
-            <span className="text-emerald-400 text-[10px] font-black uppercase tracking-[0.3em]">Ventaja Competitiva</span>
+            <span className="text-emerald-400 text-[10px] font-black uppercase tracking-[0.3em]">Ventaja Competiva</span>
               <h2 className="text-4xl md:text-5xl font-black uppercase tracking-tighter leading-none">Minimiza el riesgo de expansión</h2>
               <p className="text-teal-200/60 max-w-xl mx-auto text-xs md:text-sm font-medium leading-relaxed">
                 Obtén reportes ejecutivos automatizados en formato PDF listos para juntas corporativas de expansión comercial o valuación inmobiliaria.
@@ -847,8 +948,7 @@ const ejecutarAuditoriaIA = async () => {
   );
 }
 
-// COMPONENTES AUXILIARES AL FINAL DEL ARCHIVO
-
+// COMPONENTES AUXILIARES
 function AnalisisCard({ title, value, sub, color, darkMode }) {
   const styles = {
     indigo: darkMode ? 'bg-indigo-900/20 border-indigo-900/50' : 'bg-indigo-50 border-indigo-100',
@@ -879,6 +979,7 @@ function SelectBox({ label, value, onChange, options, darkMode }) {
   );
 }
 
+// MODIFICADO: Añadido valor de respaldo por seguridad
 function Slider({ label, value, setValue, max, unit = "", darkMode }) {
   const safeValue = typeof value === 'number' ? value : 0;
   return (
@@ -947,7 +1048,7 @@ const ReporteEstructurado = React.forwardRef(({ municipio, colonia, giro, subGir
         flexDirection: 'column', 
         fontFamily: "'Inter', 'Segoe UI', sans-serif" 
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `4px solid ${statusColor}`, paddingBottom: '20px', marginBottom: '30px' }}>
+        <div style={{ display: 'flex', justifyBetween: 'space-between', borderBottom: `4px solid ${statusColor}`, paddingBottom: '20px', marginBottom: '30px' }}>
           <div>
             <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0f172a', margin: 0, letterSpacing: '-0.5px' }}>
               GEOMARKET <span style={{ color: statusColor }}>PREDICTOR</span>
