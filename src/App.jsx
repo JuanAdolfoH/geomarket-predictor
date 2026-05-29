@@ -12,9 +12,9 @@ import GenerativeBackground from './GenerativeBackground';
 import { analizarZonaJalisco } from './services/marketAnalysis';
 import { sembrarDatosJalisco } from './services/seedJalisco';
 import { HiOutlineDocumentReport } from "react-icons/hi";
-
-// IMPORTAMOS SUPABASE
 import { supabase } from './supabaseClient';
+import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
+import ReporteEstructurado from './ReporteEstructurado';
 
 const datosJalisco = {
   "ACATIC": ["Centro", "Tierras Coloradas", "La Joya", "El Refugio"],
@@ -150,6 +150,44 @@ const opcionesGiros = {
   "TECNOLOGÍA Y DIGITAL": ["Desarrollo de Software", "Ciber Café", "Soporte Técnico", "Venta de Accesorios Gamer", "Impresión 3D", "Seguridad y Cámaras"]
 };
 
+function entrenarModeloPredictivoISO(poblacion, momentum, saturacion, insatisfaccion, conteoCompetencia) {
+  const x1 = Math.min(poblacion / 200000, 1.0);
+  const x2 = momentum / 100;
+  const x3 = Math.min((saturacion + conteoCompetencia * 1.5) / 100, 1.0);
+  const x4 = Math.min(insatisfaccion / 100, 1.0); // ← protección extra
+
+  // Target dinámico real basado en las variables
+  const targetDinamico = Math.min(Math.max(
+    (0.40 * x1) + (0.25 * x2) - (0.35 * x3) + (0.20 * x4) + 0.30,
+    0.12
+  ), 0.98);
+
+  let b0 = 0.55;
+  let b1 = 0.25;
+  let b2 = 0.15;
+  let b3 = -0.35;
+  let b4 = 0.20;
+
+  const tasaAprendizaje = 0.05;
+  for (let epoca = 0; epoca < 50; epoca++) {
+    const prediccionActual = b0 + (b1 * x1) + (b2 * x2) + (b3 * x3) + (b4 * x4);
+    const error = targetDinamico - prediccionActual; // ← ya no es siempre 0.85
+
+    b0 += tasaAprendizaje * error;
+    b1 += tasaAprendizaje * error * x1;
+    b2 += tasaAprendizaje * error * x2;
+    b3 += tasaAprendizaje * error * x3;
+    b4 += tasaAprendizaje * error * x4;
+  }
+
+  let isoPonderado = b0 + (b1 * x1) + (b2 * x2) + (b3 * x3) + (b4 * x4);
+  let scoreFinal = Math.round(isoPonderado * 100);
+  if (scoreFinal > 98) scoreFinal = 98;
+  if (scoreFinal < 12) scoreFinal = 12;
+
+  return scoreFinal;
+}
+
 export default function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [view, setView] = useState('app'); 
@@ -159,7 +197,6 @@ export default function App() {
   const [municipio, setMunicipio] = useState("ACATIC");
   const [colonia, setColonia] = useState("Centro");
   
-  // CORRECCIÓN: Los inicializamos con las primeras llaves de los objetos para evitar desajustes estáticos
   const [giro, setGiro] = useState(Object.keys(opcionesGiros)[0]);
   const [subGiro, setSubGiro] = useState(opcionesGiros[Object.keys(opcionesGiros)[0]][0]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -190,15 +227,43 @@ export default function App() {
   const [inputChat, setInputChat] = useState("");
   const [cargandoChat, setCargandoChat] = useState(false);
   
-  const [historialConsultas, setHistorialConsultas] = useState([
-    { id: 1, fecha: "Hoy, 14:32", municipio: "ZAPOPAN", colonia: "Puerta de Hierro", giro: "SALUD Y BIENESTAR", subGiro: "Consultorio Dental", iso: 85 },
-    { id: 2, fecha: "Ayer, 19:15", municipio: "GUADALAJARA", colonia: "Americana", giro: "GASTRONOMÍA", subGiro: "Cafetería", iso: 72 },
-    { id: 3, fecha: "15 May 2026", municipio: "TLAJOMULCO DE ZÚÑIGA", colonia: "La Rioja", giro: "COMERCIO MINORISTA", subGiro: "Abarrotes", iso: 59 }
-  ]);
+  const [usuarioFirebase, setUsuarioFirebase] = useState(null);
+  const [historialConsultas, setHistorialConsultas] = useState([]);
 
   const reportRef = useRef();
+  const auth = getAuth();
 
-  // CORRECCIÓN REACTIVIDAD DE MUNICIPIOS
+  useEffect(() => {
+    const cargarHistorialUsuario = async (uid) => {
+      try {
+        const { data, error } = await supabase
+          .from('historial_consultas') 
+          .select('*')
+          .eq('user_id', uid)
+          .order('id', { ascending: false });
+
+        if (error) throw error;
+        setHistorialConsultas(data || []);
+      } catch (err) {
+        console.error("Error al obtener historial de Supabase:", err);
+        setHistorialConsultas([]);
+      }
+    };
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUsuarioFirebase(user);
+        setIsLoggedIn(true);
+        cargarHistorialUsuario(user.uid); 
+      } else {
+        setUsuarioFirebase(null);
+        setIsLoggedIn(false);
+        setHistorialConsultas([]); 
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     const muniKey = (municipio || "").toUpperCase();
     if (datosJalisco[muniKey]) {
@@ -208,7 +273,6 @@ export default function App() {
     }
   }, [municipio]);
 
-  // CORRECCIÓN INTERNA DE GIROS: Quitamos el convertidor .toUpperCase() que rompía la lectura de llaves exactas del objeto opcionesGiros
   useEffect(() => {
     if (opcionesGiros[giro]) {
       if (!opcionesGiros[giro].includes(subGiro)) {
@@ -253,11 +317,12 @@ export default function App() {
           setMomentum(Number(vars.X5) || 90);
           setMovilidad(Number(vars.X6) || 75);
           
-          if (vars.X4 && Number(vars.X4) !== 0) {
-            setInsatisfaccion(Math.round((1 / Number(vars.X4)) * 250));
+          if (vars.X4 && Number(vars.X4) > 0) {
+          const valorCalculado = Math.round((1 / Number(vars.X4)) * 250);
+          setInsatisfaccion(Math.min(valorCalculado, 100));
           } else {
-            setInsatisfaccion(60);
-          }
+          setInsatisfaccion(60);
+        }
           
           const potencial = resultado.potencialVenta || "";
           setEstiloConsumo(potencial.includes("Aspiracional") ? "Aspiracional" : "Necesidad");
@@ -282,7 +347,23 @@ export default function App() {
     ejecutarMotorPredictivo();
   }, [municipio, colonia, giro, subGiro]); 
 
-  const ISO_VAL = reporteISO ? (reporteISO.iso || 77) : 77; 
+  const [isoPredictivoML, setIsoPredictivoML] = useState(77);
+
+  useEffect(() => {
+    const conteoCompetencia = competenciaReal ? competenciaReal.length : 0;
+    
+    const scoreCalculado = entrenarModeloPredictivoISO(
+      poblacion,
+      momentum,
+      saturacion,
+      insatisfaccion,
+      conteoCompetencia
+    );
+    
+    setIsoPredictivoML(scoreCalculado);
+  }, [poblacion, momentum, saturacion, insatisfaccion, competenciaReal]);
+
+  const ISO_VAL = isoPredictivoML;
 
   const ejecutarAuditoriaIA = async () => {
     if (!municipio || !giro) return;
@@ -397,11 +478,10 @@ export default function App() {
     }
   };
 
-  const handleAudit = () => {
+  const handleAudit = async () => {
     setIsAnalyzing(true);
     
     const nuevaConsulta = {
-      id: Date.now(),
       fecha: "Hace un momento",
       municipio: municipio,
       colonia: colonia,
@@ -409,8 +489,18 @@ export default function App() {
       subGiro: subGiro,
       iso: ISO_VAL
     };
-    setHistorialConsultas([nuevaConsulta, ...historialConsultas]);
-    
+
+    if (isLoggedIn && usuarioFirebase) {
+      try {
+        await supabase.from('historial_consultas').insert([
+          { ...nuevaConsulta, user_id: usuarioFirebase.uid }
+        ]);
+      } catch (err) {
+        console.error("Error al respaldar auditoría en Supabase:", err);
+      }
+    }
+
+    setHistorialConsultas(prev => [{ id: Date.now(), ...nuevaConsulta }, ...prev]);
     ejecutarAuditoriaIA();
     
     setActiveTab('mapa'); 
@@ -436,6 +526,19 @@ export default function App() {
     const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
     pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
     pdf.save(`Reporte_Ejecutivo_ISO_${municipio}_${subGiro}.pdf`);
+  };
+
+  const handleLogoutFirebase = async () => {
+    try {
+      await signOut(auth);
+      setIsLoggedIn(false);
+      setUsuarioFirebase(null);
+      setHistorialConsultas([]);
+      setView('app');
+      setActiveTab('variables');
+    } catch (error) {
+      console.error("Error al cerrar sesión:", error);
+    }
   };
 
   const radarData = [
@@ -498,7 +601,7 @@ export default function App() {
                 <div className="flex items-center gap-4">
                   <span className="text-[10px] font-black text-teal-600 bg-teal-50 px-3 py-1 rounded-full uppercase tracking-widest">Premium</span>
                   <button onClick={descargarReporte} className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest transition-all cursor-pointer ${darkMode ? 'bg-slate-700 text-white hover:bg-slate-600' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'}`}>PDF</button>
-                  <button onClick={() => setIsLoggedIn(false)} className="text-[10px] font-black text-rose-400 uppercase tracking-widest hover:text-rose-600 transition-colors cursor-pointer">Salir</button>
+                  <button onClick={handleLogoutFirebase} className="text-[10px] font-black text-rose-400 uppercase tracking-widest hover:text-rose-600 transition-colors cursor-pointer">Salir</button>
                 </div>
               )}
 
@@ -519,7 +622,7 @@ export default function App() {
                   <span className={`p-1.5 rounded-lg text-[10px] ${darkMode ? 'bg-indigo-900/50 text-indigo-300' : 'bg-indigo-100 text-indigo-600'}`}>📍</span>
                   <h2 className={`text-[11px] font-black uppercase tracking-widest italic ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Selección de zona</h2>
                 </div>
-                <div className={`space-y-3 p-4 rounded-[2rem] border ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-indigo-50/30 border-indigo-100/50'}`}>
+                <div className={`space-y-3 p-4 rounded-[2rem] border ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-indigo-5/30 border-indigo-100/50'}`}>
                   <SelectBox label="Municipio" value={municipio} onChange={setMunicipio} options={Object.keys(datosJalisco)} darkMode={darkMode} />
                   <SelectBox label="Colonia" value={colonia} onChange={setColonia} options={datosJalisco[(municipio || "").toUpperCase()] || []} darkMode={darkMode} />
                   <SelectBox label="Giro" value={giro} onChange={setGiro} options={Object.keys(opcionesGiros)} darkMode={darkMode} />
@@ -532,7 +635,7 @@ export default function App() {
                   <span className={`p-1.5 rounded-lg text-[10px] ${darkMode ? 'bg-teal-900/50 text-teal-300' : 'bg-teal-100 text-teal-600'}`}>⚙️</span>
                   <h2 className={`text-[11px] font-black uppercase tracking-widest italic ${darkMode ? 'text-teal-400' : 'text-teal-600'}`}>Estrategia de negocio</h2>
                 </div>
-                <div className={`space-y-4 p-4 rounded-[2rem] border ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-teal-50/30 border-teal-100/50'}`}>
+                <div className={`space-y-4 p-4 rounded-[2rem] border ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-teal-5/30 border-teal-100/50'}`}>
                   <SelectBox label="Presupuesto" value={presupuesto} onChange={setPresupuesto} options={["Bajo", "Medio", "Alto", "Franquicia"]} darkMode={darkMode} />
                   <SelectBox label="Target" value={target} onChange={setTarget} options={["Popular", "Media", "Media Alta", "Lujo"]} darkMode={darkMode} />
 
@@ -547,203 +650,219 @@ export default function App() {
                     </div>
                   </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase ml-3 tracking-widest">Horarios Operativos</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {['Matutino', 'Vespertino', 'Nocturno', '24 Horas'].map((turno) => (
-                          <div key={turno} onClick={() => setHorario(turno)} className={`flex items-center gap-2 p-2 rounded-xl border transition-all cursor-pointer ${horario === turno ? 'bg-teal-100 border-teal-400 scale-[1.02]' : darkMode ? 'bg-slate-900/50 border-slate-700 hover:border-teal-900' : 'bg-white/50 border-slate-100 hover:border-teal-200'}`}>
-                            <div className={`w-2 h-2 rounded-full ${horario === turno ? 'bg-teal-500 animate-ping' : 'bg-slate-600'}`}></div>
-                            <span className={`text-[8px] font-bold uppercase ${horario === turno ? (darkMode ? 'text-teal-400' : 'text-teal-700') : 'text-slate-500'}`}>{turno}</span>
-                          </div>
-                        ))}
-                      </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-slate-400 uppercase ml-3 tracking-widest">Horarios Operativos</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['Matutino', 'Vespertino', 'Nocturno', '24 Horas'].map((turno) => (
+                        <div key={turno} onClick={() => setHorario(turno)} className={`flex items-center gap-2 p-2 rounded-xl border transition-all cursor-pointer ${horario === turno ? 'bg-teal-100 border-teal-400 scale-[1.02]' : darkMode ? 'bg-slate-900/50 border-slate-700 hover:border-teal-900' : 'bg-white/50 border-slate-100 hover:border-teal-200'}`}>
+                          <div className={`w-2 h-2 rounded-full ${horario === turno ? 'bg-teal-500 animate-ping' : 'bg-slate-600'}`}></div>
+                          <span className={`text-[8px] font-bold uppercase ${horario === turno ? (darkMode ? 'text-teal-400' : 'text-teal-700') : 'text-slate-500'}`}>{turno}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </section>
+                </div>
+              </section>
 
-                <button onClick={handleAudit} disabled={isAnalyzing || cargandoIA} className={`w-full py-5 rounded-[2rem] font-black uppercase text-[11px] tracking-widest transition-all active:scale-95 shadow-xl cursor-pointer ${darkMode ? 'bg-teal-600 hover:bg-teal-500 text-white shadow-teal-900/20' : 'bg-slate-900 hover:bg-teal-600 text-white shadow-slate-300'}`}>
-                  {isAnalyzing ? "PROCESANDO CAPAS..." : "EJECUTAR AUDITORÍA"}
-                </button>
+              <button onClick={handleAudit} disabled={isAnalyzing || cargandoIA} className={`w-full py-5 rounded-[2rem] font-black uppercase text-[11px] tracking-widest transition-all active:scale-95 shadow-xl cursor-pointer ${darkMode ? 'bg-teal-600 hover:bg-teal-500 text-white shadow-teal-900/20' : 'bg-slate-900 hover:bg-teal-600 text-white shadow-slate-300'}`}>
+                {isAnalyzing ? "PROCESANDO CAPAS..." : "EJECUTAR AUDITORÍA"}
+              </button>
 
-                {analisisIA && (
-                  <div className="p-6 rounded-[2.5rem] border relative overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 bg-white/70 border-white/40 shadow-xl backdrop-blur-xl dark:bg-slate-950/60 dark:border-slate-800/80">
-                    <div className="absolute -top-10 -right-10 w-20 h-20 rounded-full bg-cyan-400/20 blur-xl pointer-events-none"></div>
-                    
-                    <div className="flex items-center gap-3 mb-4 pb-2 border-b border-slate-200/40 dark:border-slate-800/60">
-                      <div className="bg-cyan-500/10 p-2 rounded-xl border border-cyan-500/20 dark:bg-teal-500/20">
-                        <HiOutlineDocumentReport className="text-xl text-cyan-600 dark:text-teal-400" />
+              {analisisIA && (
+                <div className="p-6 rounded-[2.5rem] border relative overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 bg-white/70 border-white/40 shadow-xl backdrop-blur-xl dark:bg-slate-950/60 dark:border-slate-800/80">
+                  <div className="absolute -top-10 -right-10 w-20 h-20 rounded-full bg-cyan-400/20 blur-xl pointer-events-none"></div>
+                  
+                  <div className="flex items-center gap-3 mb-4 pb-2 border-b border-slate-200/40 dark:border-slate-800/60">
+                    <div className="bg-cyan-500/10 p-2 rounded-xl border border-cyan-500/20 dark:bg-teal-500/20">
+                      <HiOutlineDocumentReport className="text-xl text-cyan-600 dark:text-teal-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-900 dark:text-white leading-none">
+                        Auditoría de Expansión
+                      </h3>
+                      <p className="text-[8px] font-bold uppercase tracking-wider text-cyan-600 dark:text-teal-400 mt-1">
+                        Consultor Local • Llama3
+                      </p>
+                    </div>
+                    {cargandoIA && (
+                      <div className="flex gap-1 ml-auto">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-bounce [animation-delay:-0.3s]"></span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-bounce [animation-delay:-0.15s]"></span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-bounce"></span>
                       </div>
-                      <div>
-                        <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-900 dark:text-white leading-none">
-                          Auditoría de Expansión
-                        </h3>
-                        <p className="text-[8px] font-bold uppercase tracking-wider text-cyan-600 dark:text-teal-400 mt-1">
-                          Consultor Local • Llama3
+                    )}
+                  </div>
+
+                  <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1 text-slate-800 dark:text-slate-200">
+                    {analisisIA.split('\n').map((parrafo, index) => {
+                      const textoLimpio = parrafo.replace(/\*+/g, '').trim();
+                      if (!textoLimpio) return null;
+
+                      if (/^\d+\./.test(textoLimpio)) {
+                        const [numero, ...restoMensaje] = textoLimpio.split('.');
+                        return (
+                          <div 
+                            key={index} 
+                            className="p-3.5 rounded-2xl border transition-all duration-300 hover:scale-[1.01] bg-white/50 border-slate-200/60 shadow-sm dark:bg-slate-900/40 dark:border-slate-800/50 flex gap-3 items-start"
+                          >
+                            <span className="font-black text-xs text-cyan-600 dark:text-teal-400 bg-cyan-50 dark:bg-slate-900 px-2 py-0.5 rounded-lg border border-cyan-100 dark:border-slate-800">
+                              {numero}
+                            </span>
+                            <p className="text-[10px] font-bold leading-relaxed text-slate-900 dark:text-slate-100 m-0 flex-1">
+                              {restoMensaje.join('.').trim()}
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <p key={index} className="text-[10px] font-semibold leading-relaxed tracking-wide text-slate-600 dark:text-slate-400 pl-1">
+                          {textoLimpio}
                         </p>
-                      </div>
-                      {cargandoIA && (
-                        <div className="flex gap-1 ml-auto">
-                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-bounce [animation-delay:-0.3s]"></span>
-                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-bounce [animation-delay:-0.15s]"></span>
-                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-bounce"></span>
-                        </div>
-                      )}
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </aside>
+
+            <main className={`backdrop-blur-md p-4 rounded-[4rem] shadow-2xl border min-h-[600px] flex flex-col overflow-hidden transition-all duration-500 ${darkMode ? 'bg-slate-900/95 border-slate-800 shadow-black/40' : 'bg-white/95 border-white'}`}>
+              <nav className={`flex gap-2 p-2 rounded-full mb-6 mx-4 mt-2 border flex-shrink-0 overflow-x-auto ${darkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-100/50 border-slate-200/50'}`}>
+                {['variables', 'mapa', 'comparativa', 'competencia', 'chat', 'perfil'].map((t) => (
+                  <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-4 px-3 rounded-2xl font-black text-[10px] uppercase transition-all whitespace-nowrap cursor-pointer ${activeTab === t ? "bg-teal-500 text-white shadow-lg shadow-teal-500/30 scale-[1.02]" : darkMode ? "text-slate-500 hover:text-slate-300" : "text-slate-400"}`}>
+                    {t === 'competencia' ? `competencia (${competenciaReal.length > 0 ? competenciaReal.length : negocios.length})` : t === 'chat' ? '💬 Asesor IA' : t === 'perfil' ? (isLoggedIn ? '👤 Perfil' : '🔐 Iniciar Sesión') : t}
+                  </button>
+                ))}
+              </nav>
+
+              <div className="flex-1 px-8 pb-8 overflow-y-auto">
+                {activeTab === 'variables' && (
+                  <div className="py-6 space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10 px-4">
+                      <Slider label="Población Objetivo (X1)" value={poblacion} setValue={setPoblacion} max={200000} darkMode={darkMode} />
+                      <Slider label="Momentum Digital (X5)" value={momentum} setValue={setMomentum} max={100} unit="%" darkMode={darkMode} />
+                      <Slider label="Saturación de Mercado (X3)" value={saturacion} setValue={setSaturacion} max={100} unit="%" darkMode={darkMode} />
+                      <Slider label="Insatisfacción Cliente (X4)" value={insatisfaccion} setValue={setInsatisfaccion} max={100} unit="%" darkMode={darkMode} />
                     </div>
 
-                    <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1 text-slate-800 dark:text-slate-200">
-                      {analisisIA.split('\n').map((parrafo, index) => {
-                        const textoLimpio = parrafo.replace(/\*+/g, '').trim();
-                        if (!textoLimpio) return null;
+                    <div className={`h-[1px] bg-gradient-to-r from-transparent via-slate-200 to-transparent w-full my-8 ${darkMode ? 'opacity-10' : ''}`} />
 
-                        if (/^\d+\./.test(textoLimpio)) {
-                          const [numero, ...restoMensaje] = textoLimpio.split('.');
-                          return (
-                            <div 
-                              key={index} 
-                              className="p-3.5 rounded-2xl border transition-all duration-300 hover:scale-[1.01] bg-white/50 border-slate-200/60 shadow-sm dark:bg-slate-900/40 dark:border-slate-800/50 flex gap-3 items-start"
-                            >
-                              <span className="font-black text-xs text-cyan-600 dark:text-teal-400 bg-cyan-50 dark:bg-slate-900 px-2 py-0.5 rounded-lg border border-cyan-100 dark:border-slate-800">
-                                {numero}
-                              </span>
-                              <p className="text-[10px] font-bold leading-relaxed text-slate-900 dark:text-slate-100 m-0 flex-1">
-                                {restoMensaje.join('.').trim()}
-                              </p>
-                            </div>
-                          );
-                        }
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className={`p-6 rounded-[2.5rem] border flex flex-col justify-between transition-colors ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50/50 border-white'}`}>
+                        <div className="flex justify-between items-center mb-4">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Vida Útil del Impulso</span>
+                          <span className={`text-xs font-black uppercase italic ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>18 Meses Est.</span>
+                        </div>
+                        <div className={`h-1.5 rounded-full overflow-hidden ${darkMode ? 'bg-slate-900' : 'bg-slate-200'}`}>
+                          <div className="h-full bg-indigo-500 w-[70%] animate-pulse" />
+                        </div>
+                      </div>
 
-                        return (
-                          <p key={index} className="text-[10px] font-semibold leading-relaxed tracking-wide text-slate-600 dark:text-slate-400 pl-1">
-                            {textoLimpio}
-                          </p>
-                        );
-                      })}
+                      <div className={`p-6 rounded-[2.5rem] border flex flex-col justify-between transition-colors ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50/50 border-white'}`}>
+                        <div className="flex justify-between items-center mb-4">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Factor de Consumo</span>
+                          <span className={`text-xs font-black uppercase italic ${darkMode ? 'text-teal-400' : 'text-teal-600'}`}>{styleConsumo}</span>
+                        </div>
+                        <div className="flex gap-1 h-1.5">
+                          {[1, 2, 3, 4].map((b) => (
+                            <div key={b} className={`flex-1 rounded-full ${styleConsumo === "Aspiracional" ? (b <= 4 ? 'bg-teal-500' : (darkMode ? 'bg-slate-900' : 'bg-slate-200')) : (b <= 2 ? 'bg-indigo-500' : (darkMode ? 'bg-slate-900' : 'bg-slate-200'))}`} />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className={`mt-4 p-6 rounded-[2.5rem] border shadow-sm transition-all duration-500 ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-white/60 border-white'}`}>
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="p-2 bg-teal-500 text-white rounded-xl shadow-lg">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                          </svg>
+                        </div>
+                        <h2 className={`text-[10px] font-black uppercase tracking-widest italic leading-none ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>Estrategia Prescriptiva</h2>
+                      </div>
+                      <p className={`text-[11px] leading-relaxed italic relative z-10 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                        Basado en el índice <span className="font-bold text-teal-500">ISO del {ISO_VAL}%</span>, el negocio de <span className="font-bold">{giro}</span> en <span className={darkMode ? 'text-white' : 'text-slate-900'}>{colonia}</span> presents un entorno {ISO_VAL > 65 ? 'favorable para la inversión.' : 'con saturación a considerar.'} 
+                        {reporteISO ? ` ${reporteISO.recomendacionSensata}` : ''}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col items-center justify-center pt-6 opacity-40 hover:opacity-100 transition-opacity">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Regresión Múltiple Adaptativa</p>
+                      <p className={`text-[11px] font-mono italic ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                        Y = β₀ + β₁X₁ + β₂X₂ - β₃X₃ + β₄(1/X₄) + β₅X₅ + β₆X₆ + ε
+                      </p>
                     </div>
                   </div>
                 )}
-              </aside>
 
-              <main className={`backdrop-blur-md p-4 rounded-[4rem] shadow-2xl border min-h-[600px] flex flex-col overflow-hidden transition-all duration-500 ${darkMode ? 'bg-slate-900/95 border-slate-800 shadow-black/40' : 'bg-white/95 border-white'}`}>
-                <nav className={`flex gap-2 p-2 rounded-full mb-6 mx-4 mt-2 border flex-shrink-0 overflow-x-auto ${darkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-100/50 border-slate-200/50'}`}>
-                  {['variables', 'mapa', 'comparativa', 'competencia', 'chat', 'perfil'].map((t) => (
-                    <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-4 px-3 rounded-2xl font-black text-[10px] uppercase transition-all whitespace-nowrap cursor-pointer ${activeTab === t ? "bg-teal-500 text-white shadow-lg shadow-teal-500/30 scale-[1.02]" : darkMode ? "text-slate-500 hover:text-slate-300" : "text-slate-400"}`}>
-                      {t === 'competencia' ? `competencia (${competenciaReal.length > 0 ? competenciaReal.length : negocios.length})` : t === 'chat' ? '💬 Asesor IA' : t === 'perfil' ? (isLoggedIn ? '👤 Perfil' : '🔐 Iniciar Sesión') : t}
-                    </button>
-                  ))}
-                </nav>
-
-                <div className="flex-1 px-8 pb-8 overflow-y-auto">
-                  {activeTab === 'variables' && (
-                    <div className="py-6 space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10 px-4">
-                        <Slider label="Población Objetivo (X1)" value={poblacion} setValue={setPoblacion} max={200000} darkMode={darkMode} />
-                        <Slider label="Momentum Digital (X5)" value={momentum} setValue={setMomentum} max={100} unit="%" darkMode={darkMode} />
-                        <Slider label="Saturación de Mercado (X3)" value={saturacion} setValue={setSaturacion} max={100} unit="%" darkMode={darkMode} />
-                        <Slider label="Insatisfacción Cliente (X4)" value={insatisfaccion} setValue={setInsatisfaccion} max={100} unit="%" darkMode={darkMode} />
-                      </div>
-
-                      <div className={`h-[1px] bg-gradient-to-r from-transparent via-slate-200 to-transparent w-full my-8 ${darkMode ? 'opacity-10' : ''}`} />
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className={`p-6 rounded-[2.5rem] border flex flex-col justify-between transition-colors ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50/50 border-white'}`}>
-                          <div className="flex justify-between items-center mb-4">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Vida Útil del Impulso</span>
-                            <span className={`text-xs font-black uppercase italic ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>18 Meses Est.</span>
-                          </div>
-                          <div className={`h-1.5 rounded-full overflow-hidden ${darkMode ? 'bg-slate-900' : 'bg-slate-200'}`}>
-                            <div className="h-full bg-indigo-500 w-[70%] animate-pulse" />
-                          </div>
-                        </div>
-
-                        <div className={`p-6 rounded-[2.5rem] border flex flex-col justify-between transition-colors ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50/50 border-white'}`}>
-                          <div className="flex justify-between items-center mb-4">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Factor de Consumo</span>
-                            <span className={`text-xs font-black uppercase italic ${darkMode ? 'text-teal-400' : 'text-teal-600'}`}>{styleConsumo}</span>
-                          </div>
-                          <div className="flex gap-1 h-1.5">
-                            {[1, 2, 3, 4].map((b) => (
-                              <div key={b} className={`flex-1 rounded-full ${styleConsumo === "Aspiracional" ? (b <= 4 ? 'bg-teal-500' : (darkMode ? 'bg-slate-900' : 'bg-slate-200')) : (b <= 2 ? 'bg-indigo-500' : (darkMode ? 'bg-slate-900' : 'bg-slate-200'))}`} />
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col items-center justify-center pt-6 opacity-40 hover:opacity-100 transition-opacity">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Regresión Múltiple Adaptativa</p>
-                        <p className={`text-[11px] font-mono italic ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                          Y = β₀ + β₁X₁ + β₂X₂ - β₃X₃ + β₄(1/X₄) + β₅X₅ + β₆X₆ + ε
-                        </p>
+                {activeTab === 'mapa' && (
+                  <div className="animate-in fade-in duration-700 space-y-6">
+                    <div className={`h-[380px] w-full rounded-[3.5rem] overflow-hidden border-[8px] relative group transition-colors ${darkMode ? 'border-slate-800 shadow-inner' : 'border-slate-50 shadow-inner'}`}>
+                      {isAnalyzing && <div className="scanner-line"></div>}
+                      <MapContainer key={`${municipio}-${competenciaReal.length}`} center={mapaCentro} zoom={13} style={{ height: "100%", width: "100%", zIndex: 1 }}>
+                        <TileLayer url={darkMode ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"} />
+                        
+                        <CircleMarker center={mapaCentro} radius={14} pathOptions={{fillColor: '#14b8a6', color: 'white', weight: 4, fillOpacity: 0.9}} />
+                        
+                        {competenciaReal.map((negocio, i) => (
+                          negocio.latitud && negocio.longitud && (
+                            <CircleMarker 
+                              key={i} 
+                              center={[negocio.latitud, negocio.longitud]} 
+                              radius={8} 
+                              pathOptions={{ fillColor: '#f59e0b', color: 'white', weight: 2, fillOpacity: 0.9 }}
+                            >
+                              <Popup>
+                                <div className="text-slate-900 font-sans p-1">
+                                  <strong className="text-xs uppercase font-black block text-teal-600">{negocio.nom_estab}</strong>
+                                  <span className="text-[10px] font-bold block mt-1 text-slate-700">Actividad: {negocio.nombre_act}</span>
+                                  <span className="text-[9px] bg-slate-100 text-slate-800 px-2 py-0.5 rounded mt-1.5 inline-block font-black uppercase">Personal: {negocio.per_ocu}</span>
+                                </div>
+                              </Popup>
+                            </CircleMarker>
+                          )
+                        ))}
+                      </MapContainer>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <AnalisisCard 
+                        title="Sensata (Local)" 
+                        value={cargandoAnalisis ? "Calculando..." : `Recomendación ${colonia}`} 
+                        sub={cargandoAnalisis ? "Cargando recomendación..." : (reporteISO?.recomendacionSensata || "Ajustar ubicación según flujo primario.")} 
+                        color="indigo" 
+                        darkMode={darkMode} 
+                      />
+                      
+                      <AnalisisCard 
+                        title="Fantasiosa (Océano Azul)" 
+                        value={cargandoAnalisis ? "Buscando..." : `${municipio} Alternativo`} 
+                        sub={cargandoAnalisis ? "Evaluando mercados..." : (reporteISO?.recomendacionFantasiosa || `Zonas con menor densidad de competidores en ${municipio}.`)} 
+                        color="orange" 
+                        darkMode={darkMode} 
+                      />
+                      
+                      <div className={`p-6 rounded-[2.5rem] border flex flex-col justify-center transition-colors ${darkMode ? 'bg-teal-900/40 border-teal-800' : 'bg-teal-900 border-teal-800 shadow-teal-900/20 shadow-lg'}`}>
+                        <p className="text-[9px] font-black text-teal-400 uppercase mb-1">Modelo de Venta</p>
+                        <span className="text-sm font-black text-white uppercase italic leading-tight">
+                          {cargandoAnalisis ? "Procesando..." : `Consumo ${styleConsumo}`}
+                        </span>
                       </div>
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {activeTab === 'mapa' && (
-                    <div className="animate-in fade-in duration-700 space-y-6">
-                      <div className={`h-[380px] w-full rounded-[3.5rem] overflow-hidden border-[8px] relative group transition-colors ${darkMode ? 'border-slate-800 shadow-inner' : 'border-slate-50 shadow-inner'}`}>
-                        {isAnalyzing && <div className="scanner-line"></div>}
-                        <MapContainer key={`${municipio}-${competenciaReal.length}`} center={mapaCentro} zoom={13} style={{ height: "100%", width: "100%", zIndex: 1 }}>
-                          <TileLayer url={darkMode ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"} />
-                          
-                          <CircleMarker center={mapaCentro} radius={14} pathOptions={{fillColor: '#14b8a6', color: 'white', weight: 4, fillOpacity: 0.9}} />
-                          
-                          {competenciaReal.map((negocio, i) => (
-                            negocio.latitud && negocio.longitud && (
-                              <CircleMarker 
-                                key={i} 
-                                center={[negocio.latitud, negocio.longitud]} 
-                                radius={8} 
-                                pathOptions={{ fillColor: '#f59e0b', color: 'white', weight: 2, fillOpacity: 0.9 }}
-                              >
-                                <Popup>
-                                  <div className="text-slate-900 font-sans p-1">
-                                    <strong className="text-xs uppercase font-black block text-teal-600">{negocio.nom_estab}</strong>
-                                    <span className="text-[10px] font-bold block mt-1 text-slate-700">Actividad: {negocio.nombre_act}</span>
-                                    <span className="text-[9px] bg-slate-100 text-slate-800 px-2 py-0.5 rounded mt-1.5 inline-block font-black uppercase">Personal: {negocio.per_ocu}</span>
-                                  </div>
-                                </Popup>
-                              </CircleMarker>
-                            )
-                          ))}
-                        </MapContainer>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <AnalisisCard 
-                          title="Sensata (Local)" 
-                          value={cargandoAnalisis ? "Calculando..." : `Recomendación ${colonia}`} 
-                          sub={cargandoAnalisis ? "Cargando recomendación..." : (reporteISO?.recomendacionSensata || "Ajustar ubicación según flujo primario.")} 
-                          color="indigo" 
-                          darkMode={darkMode} 
-                        />
-                        
-                        <AnalisisCard 
-                          title="Fantasiosa (Océano Azul)" 
-                          value={cargandoAnalisis ? "Buscando..." : `${municipio} Alternativo`} 
-                          sub={cargandoAnalisis ? "Evaluando mercados..." : (reporteISO?.recomendacionFantasiosa || `Zonas con menor densidad de competidores en ${municipio}.`)} 
-                          color="orange" 
-                          darkMode={darkMode} 
-                        />
-                        
-                        <div className={`p-6 rounded-[2.5rem] border flex flex-col justify-center transition-colors ${darkMode ? 'bg-teal-900/40 border-teal-800' : 'bg-teal-900 border-teal-800 shadow-teal-900/20 shadow-lg'}`}>
-                          <p className="text-[9px] font-black text-teal-400 uppercase mb-1">Modelo de Venta</p>
-                          <span className="text-sm font-black text-white uppercase italic leading-tight">
-                            {cargandoAnalisis ? "Procesando..." : `Consumo ${styleConsumo}`}
-                          </span>
-                        </div>
-                      </div>
+                {activeTab === 'competencia' && (
+                  <div className="space-y-6 py-4 animate-in fade-in duration-500">
+                    <div className={`p-6 rounded-[2.5rem] border transition-colors ${darkMode ? 'bg-amber-900/20 border-amber-900/50' : 'bg-amber-50 border-amber-100'}`}>
+                      <p className="text-[11px] font-black text-amber-600 uppercase tracking-widest mb-2">Capa de Reputación Digital (X4)</p>
+                      <p className={`text-xs font-bold italic ${darkMode ? 'text-amber-200/80' : 'text-amber-800'}`}>
+                        {reporteISO ? reporteISO.diagnostico : `"Analizando comentarios de la periferia..."`}
+                      </p>
                     </div>
-                  )}
-
-                  {activeTab === 'competencia' && (
-                    <div className="space-y-6 py-4 animate-in fade-in duration-500">
-                      <div className={`p-6 rounded-[2.5rem] border transition-colors ${darkMode ? 'bg-amber-900/20 border-amber-900/50' : 'bg-amber-50 border-amber-100'}`}>
-                        <p className="text-[11px] font-black text-amber-600 uppercase tracking-widest mb-2">Capa de Reputación Digital (X4)</p>
-                        <p className={`text-xs font-bold italic ${darkMode ? 'text-amber-200/80' : 'text-amber-800'}`}>
-                          {reporteISO ? reporteISO.diagnostico : `"Analizando comentarios de la periferia..."`}
-                        </p>
-                      </div>
-                      
-                      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+                    
+                    <div className="max-h-[600px] overflow-y-auto overscroll-contain pr-2 space-y-1">
+                      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 p-1">
                         {competenciaReal.length > 0 ? (
                           competenciaReal.map((item, i) => (
                             <div key={i} className={`flex flex-col justify-between p-6 rounded-[2.5rem] border transition-all hover:shadow-md ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-white shadow-sm'}`}>
@@ -802,117 +921,107 @@ export default function App() {
                         )}
                       </div>
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {activeTab === 'chat' && (
-                    <div className="flex flex-col h-[500px] border rounded-[2.5rem] overflow-hidden bg-white/50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 animate-in fade-in duration-300">
-                      <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-teal-500/5 flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
-                        <p className="text-[11px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">Consultor IA de Expansión Corporativa</p>
-                      </div>
-
-                      <div className="flex-1 p-6 overflow-y-auto space-y-4">
-                        {mensajesChat.map((m, idx) => (
-                          <div key={idx} className={`flex ${m.rol === 'usuario' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[80%] p-4 rounded-3xl text-[11px] font-medium leading-relaxed shadow-sm border ${m.rol === 'usuario' ? 'bg-teal-500 text-white border-teal-600 rounded-tr-none' : 'bg-white dark:bg-slate-950/60 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800/80 rounded-tl-none'}`}>
-                              {m.texto}
-                            </div>
-                          </div>
-                        ))}
-                        {cargandoChat && (
-                          <div className="flex justify-start">
-                            <div className="bg-white dark:bg-slate-950/60 p-4 rounded-3xl border border-slate-200 dark:border-slate-800 flex gap-1.5 items-center">
-                              <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                              <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                              <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-bounce"></span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      <form onSubmit={enviarMensajeChat} className="p-4 border-t border-slate-200 dark:border-slate-800 bg-white/30 dark:bg-slate-950/20 flex gap-2">
-                        <input 
-                          type="text" 
-                          value={inputChat}
-                          onChange={(e) => setInputChat(e.target.value)}
-                          placeholder={`Pregúntame sobre el mercado de ${subGiro} en ${municipio}...`}
-                          className="flex-1 px-5 py-3.5 rounded-2xl text-[11px] font-bold border outline-none bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:border-teal-500 transition-colors"
-                        />
-                        <button type="submit" disabled={cargandoChat} className="px-6 py-3.5 bg-teal-500 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-teal-500/20 hover:bg-teal-400 active:scale-95 transition-all">
-                          Enviar
-                        </button>
-                      </form>
+                {activeTab === 'chat' && (
+                  <div className="flex flex-col h-[500px] border rounded-[2.5rem] overflow-hidden bg-white/50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 animate-in fade-in duration-300">
+                    <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-teal-500/5 flex items-center gap-3">
+                      <div className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
+                      <p className="text-[11px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">Consultor IA de Expansión Corporativa</p>
                     </div>
-                  )}
 
-                  {activeTab === 'comparativa' && (
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-center py-4">
-                      <div className={`h-[400px] w-full rounded-[3rem] border p-4 transition-colors ${darkMode ? 'bg-slate-800/20 border-slate-700' : 'bg-slate-50/30 border-slate-100'}`}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
-                            <PolarGrid stroke={darkMode ? "#334155" : "#e2e8f0"} />
-                            <PolarAngleAxis dataKey="subject" tick={{fill: darkMode ? '#94a3b8' : '#64748b', fontSize: 11, fontWeight: 900}} />
-                            <RadarRecharts name="Métricas" dataKey="A" stroke="#14b8a6" fill="#14b8a6" fillOpacity={0.4} />
-                            <Tooltip />
-                          </RadarChart>
-                        </ResponsiveContainer>
-                      </div>
-                      
-                      <div className="flex flex-col gap-3">
-                          <div className="grid gap-3">
-                              <MetricaInfo label="Población (X1)" desc="Residentes + Turistas/Flotantes." color="bg-blue-500" darkMode={darkMode} />
-                              <MetricaInfo label="Momentum (X5)" desc="Crecimiento en redes sociales." color="bg-pink-500" darkMode={darkMode} />
-                              <MetricaInfo label="Saturación (X3)" desc="Cantidad de negocios similares." color="bg-amber-500" darkMode={darkMode} />
-                              <MetricaInfo label="ISO (Y)" desc="Índice de Supervivencia y Oportunidad." color="bg-teal-500" darkMode={darkMode} />
+                    <div className="flex-1 p-6 overflow-y-auto space-y-4">
+                      {mensajesChat.map((m, idx) => (
+                        <div key={idx} className={`flex ${m.rol === 'usuario' ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-[80%] p-4 rounded-3xl text-[11px] font-medium leading-relaxed shadow-sm border ${m.rol === 'usuario' ? 'bg-teal-500 text-white border-teal-600 rounded-tr-none' : 'bg-white dark:bg-slate-950/60 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800/80 rounded-tl-none'}`}>
+                            {m.texto}
                           </div>
-
-                          <div className={`mt-4 p-6 rounded-[2.5rem] border shadow-sm transition-all duration-500 ${darkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-white/60 border-white'}`}>
-                            <div className="flex items-center gap-3 mb-4">
-                              <div className="p-2 bg-teal-500 text-white rounded-xl shadow-lg">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                                </svg>
-                              </div>
-                              <h2 className={`text-[10px] font-black uppercase tracking-widest italic leading-none ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>Estrategia Prescriptiva</h2>
-                            </div>
-                            <p className={`text-[11px] leading-relaxed italic relative z-10 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                              Basado en el índice <span className="font-bold text-teal-500">ISO del {ISO_VAL}%</span>, el negocio de <span className="font-bold">{giro}</span> en <span className={darkMode ? 'text-white' : 'text-slate-900'}>{colonia}</span> presenta un entorno {ISO_VAL > 65 ? 'favorable para la inversión.' : 'con saturación a considerar.'} 
-                              {reporteISO ? ` ${reporteISO.recomendacionSensata}` : ''}
-                            </p>
-                          </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {activeTab === 'perfil' && (
-                    !isLoggedIn ? (
-                      <div className="flex flex-col items-center justify-center text-center py-16 animate-in fade-in duration-500 max-w-md mx-auto">
-                        <div className={`w-20 h-20 rounded-full flex items-center justify-center text-3xl shadow-lg border mb-6 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                          🔐
                         </div>
-                        <h3 className={`text-lg font-black uppercase tracking-tight mb-2 ${darkMode ? 'text-white' : 'text-slate-800'}`}>
-                          Área Exclusiva de Clientes
-                        </h3>
-                        <p className="text-xs text-slate-400 font-medium leading-relaxed mb-8">
-                          Inicia sesión con tus credenciales premium para visualizar tu historial completo de consultas geo-referenciales y gestionar los datos del perfil corporativo.
-                        </p>
-                        <button 
-                          onClick={() => setView('login')} 
-                          className="px-8 py-4 bg-teal-500 hover:bg-teal-400 text-white font-black text-[11px] uppercase tracking-widest rounded-2xl shadow-xl shadow-teal-500/20 active:scale-95 transition-all cursor-pointer"
-                        >
-                          Ir al Inicio de Sesión
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-8 py-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        
-                        <div className={`p-6 rounded-[2.5rem] border flex flex-col items-center text-center relative overflow-hidden ${darkMode ? 'bg-slate-800/30 border-slate-700' : 'bg-slate-50/70 border-slate-100'}`}>
-                          <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center font-black text-white text-2xl shadow-xl mb-4">
-                            AH
+                      ))}
+                      {cargandoChat && (
+                        <div className="flex justify-start">
+                          <div className="bg-white dark:bg-slate-950/60 p-4 rounded-3xl border border-slate-200 dark:border-slate-800 flex gap-1.5 items-center">
+                            <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                            <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                            <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-bounce"></span>
                           </div>
-                          <h3 className={`text-sm font-black uppercase tracking-tight ${darkMode ? 'text-white' : 'text-slate-800'}`}>Adolfo Hernández</h3>
-                          <p className="text-[10px] text-slate-400 font-bold tracking-wider uppercase mt-0.5">adolfo@geomarket.io</p>
-                          
+                        </div>
+                      )}
+                    </div>
+
+                    <form onSubmit={enviarMensajeChat} className="p-4 border-t border-slate-200 dark:border-slate-800 bg-white/30 dark:bg-slate-950/20 flex gap-2">
+                      <input 
+                        type="text" 
+                        value={inputChat}
+                        onChange={(e) => setInputChat(e.target.value)}
+                        placeholder={`Pregúntame sobre el mercado de ${subGiro} en ${municipio}...`}
+                        className="flex-1 px-5 py-3.5 rounded-2xl text-[11px] font-bold border outline-none bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:border-teal-500 transition-colors"
+                      />
+                      <button type="submit" disabled={cargandoChat} className="px-6 py-3.5 bg-teal-500 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-teal-500/20 hover:bg-teal-400 active:scale-95 transition-all">
+                        Enviar
+                      </button>
+                    </form>
+                  </div>
+                )}
+
+                {activeTab === 'comparativa' && (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-center py-4">
+                    <div className={`h-[400px] w-full rounded-[3rem] border p-4 transition-colors ${darkMode ? 'bg-slate-800/20 border-slate-700' : 'bg-slate-50/30 border-slate-100'}`}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
+                          <PolarGrid stroke={darkMode ? "#334155" : "#e2e8f0"} />
+                          <PolarAngleAxis dataKey="subject" tick={{fill: darkMode ? '#94a3b8' : '#64748b', fontSize: 11, fontWeight: 900}} />
+                          <RadarRecharts name="Métricas" dataKey="A" stroke="#14b8a6" fill="#14b8a6" fillOpacity={0.4} />
+                          <Tooltip />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    
+                    <div className="flex flex-col gap-3">
+                      <div className="grid gap-3">
+                        <MetricaInfo label="Población (X1)" desc="Residentes + Turistas/Flotantes." color="bg-blue-500" darkMode={darkMode} />
+                        <MetricaInfo label="Momentum (X5)" desc="Crecimiento en redes sociales." color="bg-pink-500" darkMode={darkMode} />
+                        <MetricaInfo label="Saturación (X3)" desc="Cantidad de negocios similares." color="bg-amber-500" darkMode={darkMode} />
+                        <MetricaInfo label="ISO (Y)" desc="Índice de Supervivencia y Oportunidad." color="bg-teal-500" darkMode={darkMode} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === 'perfil' && (
+                  !isLoggedIn ? (
+                    <div className="flex flex-col items-center justify-center text-center py-16 animate-in fade-in duration-500 max-w-md mx-auto">
+                      <div className={`w-20 h-20 rounded-full flex items-center justify-center text-3xl shadow-lg border mb-6 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                        🔐
+                      </div>
+                      <h3 className={`text-lg font-black uppercase tracking-tight mb-2 ${darkMode ? 'text-white' : 'text-slate-800'}`}>
+                        Área Exclusiva de Clientes
+                      </h3>
+                      <p className="text-xs text-slate-400 font-medium leading-relaxed mb-8">
+                        Inicia sesión con tus credenciales premium para visualizar tu historial completo de consultas geo-referenciales y gestionar los datos del perfil corporativo.
+                      </p>
+                      <button 
+                        onClick={() => setView('login')} 
+                        className="px-8 py-4 bg-teal-500 hover:bg-teal-400 text-white font-black text-[11px] uppercase tracking-widest rounded-2xl shadow-xl shadow-teal-500/20 active:scale-95 transition-all cursor-pointer"
+                      >
+                        Ir al Inicio de Sesión
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-8 py-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                      
+                      <div className={`p-6 rounded-[2.5rem] border flex flex-col items-center text-center relative overflow-hidden ${darkMode ? 'bg-slate-800/30 border-slate-700' : 'bg-slate-50/70 border-slate-100'}`}>
+                        <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center font-black text-white text-2xl shadow-xl mb-4">
+                          {usuarioFirebase?.email ? usuarioFirebase.email[0].toUpperCase() : 'U'}
+                        </div>
+                        <h3 className={`text-sm font-black uppercase tracking-tight ${darkMode ? 'text-white' : 'text-slate-800'}`}>
+                          {usuarioFirebase?.displayName || "Usuario de Geomarket"}
+                        </h3>
+                        <p className="text-[10px] text-slate-400 font-bold tracking-wider uppercase mt-0.5">
+                          {usuarioFirebase?.email || "Sin Correo"}
+                        </p>
+                        
                         <div className="mt-4 px-4 py-1 bg-teal-500/10 text-teal-500 border border-teal-500/20 rounded-full text-[9px] font-black uppercase tracking-widest">
                           Licencia Premium
                         </div>
@@ -936,36 +1045,42 @@ export default function App() {
                         </div>
 
                         <div className="space-y-3">
-                          {historialConsultas.map((item) => (
-                            <div key={item.id} className={`p-5 rounded-[2rem] border flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all hover:scale-[1.01] ${darkMode ? 'bg-slate-800/40 border-slate-700/60' : 'bg-white border-slate-100 shadow-sm'}`}>
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className={`text-[10px] font-black uppercase tracking-tight ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
-                                    {item.municipio} <span className="text-slate-400 font-normal">|</span> {item.colonia}
-                                  </span>
-                                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
-                                    {item.fecha}
-                                  </span>
-                                </div>
-                                <p className="text-[10px] text-slate-400 uppercase font-semibold">
-                                  Sector: <span className={darkMode ? 'text-slate-300' : 'text-slate-600'}>{item.giro} ({item.subGiro})</span>
-                                </p>
-                              </div>
-
-                              <div className="flex items-center gap-4 justify-between sm:justify-end">
-                                <div className="flex flex-col items-end">
-                                  <span className={`text-sm font-black tracking-tight ${item.iso >= 75 ? 'text-teal-500' : 'text-amber-500'}`}>
-                                    {item.iso}%
-                                  </span>
-                                  <span className="text-[7px] text-slate-400 font-black uppercase tracking-widest">ISO Score</span>
+                          {historialConsultas.length > 0 ? (
+                            historialConsultas.map((item) => (
+                              <div key={item.id} className={`p-5 rounded-[2rem] border flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all hover:scale-[1.01] ${darkMode ? 'bg-slate-800/40 border-slate-700/60' : 'bg-white border-slate-100 shadow-sm'}`}>
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className={`text-[10px] font-black uppercase tracking-tight ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                                      {item.municipio} <span className="text-slate-400 font-normal">|</span> {item.colonia}
+                                    </span>
+                                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                                      {item.fecha}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 uppercase font-semibold">
+                                    Sector: <span className={darkMode ? 'text-slate-300' : 'text-slate-600'}>{item.giro} ({item.subGiro})</span>
+                                  </p>
                                 </div>
 
-                                <button onClick={() => cargarConsultaHistorial(item)} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all cursor-pointer ${darkMode ? 'border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>
-                                  Recargar
-                                </button>
+                                <div className="flex items-center gap-4 justify-between sm:justify-end">
+                                  <div className="flex flex-col items-end">
+                                    <span className={`text-sm font-black tracking-tight ${item.iso >= 75 ? 'text-teal-500' : 'text-amber-500'}`}>
+                                      {item.iso}%
+                                    </span>
+                                    <span className="text-[7px] text-slate-400 font-black uppercase tracking-widest">ISO Score</span>
+                                  </div>
+
+                                  <button onClick={() => cargarConsultaHistorial(item)} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all cursor-pointer ${darkMode ? 'border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>
+                                    Recargar
+                                  </button>
+                                </div>
                               </div>
+                            ))
+                          ) : (
+                            <div className="text-center py-12 text-xs font-semibold text-slate-400 uppercase tracking-widest">
+                              No has realizado ninguna consulta todavía. ¡Prueba ejecutando tu primera auditoría!
                             </div>
-                          ))}
+                          )}
                         </div>
                       </div>
 
@@ -1117,114 +1232,7 @@ function MetricaInfo({ label, desc, color, darkMode }) {
   );
 }
 
-const ReporteEstructurado = React.forwardRef(({ municipio, colonia, giro, subGiro, poblacion, momentum, saturacion, insatisfaccion, ISO_VAL, estiloConsumo, competenciaReal = [], presupuesto, target, horario }, ref) => {
-  const getSuccessColor = (val) => {
-    if (val >= 80) return '#059669'; 
-    if (val >= 60) return '#d97706'; 
-    return '#dc2626'; 
-  };
 
-  const statusColor = getSuccessColor(ISO_VAL);
-
-  return (
-    <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
-      <div ref={ref} style={{ 
-        width: '210mm', 
-        minHeight: '297mm', 
-        padding: '2.2cm', 
-        backgroundColor: 'white', 
-        color: '#1e293b', 
-        display: 'flex', 
-        flexDirection: 'column', 
-        fontFamily: "'Inter', 'Segoe UI', sans-serif" 
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `4px solid ${statusColor}`, paddingBottom: '20px', marginBottom: '30px' }}>
-          <div>
-            <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a', margin: 0, letterSpacing: '-0.5px' }}>
-              GEOMARKET <span style={{ color: statusColor }}>PREDICTOR</span>
-            </h1>
-            <p style={{ fontSize: '9px', color: '#64748b', fontWeight: 'bold', marginTop: '5px', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
-              REPORTE EJECUTIVO DE EXPANSIÓN COMERCIAL
-            </p>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ backgroundColor: '#f1f5f9', padding: '5px 12px', borderRadius: '20px', display: 'inline-block' }}>
-              <p style={{ fontSize: '9px', fontWeight: '800', margin: 0, color: '#475569' }}>EMISIÓN: {new Date().toLocaleDateString()}</p>
-            </div>
-            <p style={{ fontSize: '11px', color: '#64748b', marginTop: '8px', fontWeight: '800' }}>{colonia?.toUpperCase()} | {municipio}</p>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '30px', alignItems: 'center', marginBottom: '30px', backgroundColor: '#f8fafc', padding: '25px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-            <div style={{ 
-              width: '120px', 
-              height: '120px', 
-              borderRadius: '50%', 
-              border: `10px solid ${statusColor}`, 
-              display: 'flex', 
-              flexDirection: 'column', 
-              alignItems: 'center', 
-              justifyContent: 'center',
-              backgroundColor: 'white'
-            }}>
-              <span style={{ fontSize: '30px', fontWeight: '900', color: '#1e293b' }}>{ISO_VAL}%</span>
-              <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#64748b' }}>ISO SCORE</span>
-            </div>
-          
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                <span style={{ backgroundColor: statusColor, color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: '900' }}>ESTUDIO PREDICTIVO</span>
-                <h2 style={{ fontSize: '18px', fontWeight: '800', margin: 0, color: '#0f172a' }}>{subGiro}</h2>
-            </div>
-            <p style={{ fontSize: '12px', lineHeight: '1.6', color: '#475569', margin: 0 }}>
-              Análisis territorial optimizado para la zona de <strong>{colonia || 'Área Metropolitana'}</strong>. La viabilidad comercial ponderada es del <strong>{ISO_VAL}%</strong>, cruzando demografía base con buffers competitivos en tiempo real.
-            </p>
-          </div>
-        </div>
-
-        <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '15px', borderRadius: '12px', marginBottom: '25px' }}>
-          <h4 style={{ margin: '0 0 5px 0', fontSize: '11px', fontWeight: '900', color: '#166534', textTransform: 'uppercase' }}>Configuración de Campaña Ejecutiva</h4>
-          <p style={{ margin: 0, fontSize: '11px', color: '#14532d', fontWeight: '600' }}>
-            Inversión: <strong>{presupuesto}</strong> | Target: <strong>{target}</strong> | Turno Comercial: <strong>{horario}</strong> | Vector de Demanda: <strong>Consumo {estiloConsumo}</strong>
-          </p>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '30px' }}>
-          <MetricCard label="Población Estimada (X1)" value={poblacion} icon="👥" />
-          <MetricCard label="Saturación de Mercado (X3)" value={`${saturacion}%`} icon="📊" color={saturacion > 65 ? '#dc2626' : '#2563eb'} />
-          <MetricCard label="Índice de Insatisfacción (X4)" value={`${insatisfaccion}%`} icon="⚠️" />
-          <MetricCard label="Momentum del Sector (X5)" value={`${momentum}%`} icon="🚀" />
-        </div>
-
-        <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', backgroundColor: '#fff' }}>
-           <h3 style={{ fontSize: '12px', fontWeight: '900', color: '#0f172a', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px', textTransform: 'uppercase' }}>
-             Muestreo Competitivo de Entorno (Registros Supabase)
-           </h3>
-           {competenciaReal.length > 0 ? (
-             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-               {competenciaReal.slice(0, 5).map((comp, idx) => (
-                 <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', backgroundColor: '#f8fafc', borderRadius: '6px', fontSize: '10px', border: '1px solid #edf2f7' }}>
-                   <span style={{ fontWeight: '700', color: '#334155' }}>{idx + 1}. {comp.nom_estab?.toUpperCase()}</span>
-                   <span style={{ color: '#64748b', fontSize: '9px' }}>Ocupación: {comp.per_ocu || '1 a 5 personas'}</span>
-                 </div>
-               ))}
-             </div>
-           ) : (
-             <p style={{ fontSize: '11px', color: '#64748b', margin: 0, stroke: 'italic' }}>
-               No se registraron buffers competitivos agresivos directos en el cuadrante principal de {municipio}. Oportunidad de Océano Azul abierta.
-             </p>
-           )}
-        </div>
-
-        <div style={{ marginTop: 'auto', textAlign: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '20px' }}>
-          <p style={{ fontSize: '8px', color: '#94a3b8', margin: 0, fontWeight: '500' }}>
-            Este documento digital constituye un análisis paramétrico automatizado propiedad de Geomarket Predictor. Los scores se derivan de aproximaciones de regresión lineal basadas en datos geo-estadísticos del estado de Jalisco, México en mayo de 2026.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-});
 
 const MetricCard = ({ label, value, icon, color = '#1e293b' }) => (
   <div style={{ padding: '12px 15px', border: '1px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '15px', backgroundColor: '#fff' }}>
