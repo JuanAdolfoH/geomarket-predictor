@@ -154,25 +154,18 @@ function entrenarModeloPredictivoISO(poblacion, momentum, saturacion, insatisfac
   const x1 = Math.min(poblacion / 200000, 1.0);
   const x2 = momentum / 100;
   const x3 = Math.min((saturacion + conteoCompetencia * 1.5) / 100, 1.0);
-  const x4 = Math.min(insatisfaccion / 100, 1.0); // ← protección extra
+  const x4 = Math.min(insatisfaccion / 100, 1.0);
 
-  // Target dinámico real basado en las variables
   const targetDinamico = Math.min(Math.max(
     (0.40 * x1) + (0.25 * x2) - (0.35 * x3) + (0.20 * x4) + 0.30,
     0.12
   ), 0.98);
 
-  let b0 = 0.55;
-  let b1 = 0.25;
-  let b2 = 0.15;
-  let b3 = -0.35;
-  let b4 = 0.20;
-
+  let b0 = 0.55, b1 = 0.25, b2 = 0.15, b3 = -0.35, b4 = 0.20;
   const tasaAprendizaje = 0.05;
   for (let epoca = 0; epoca < 50; epoca++) {
     const prediccionActual = b0 + (b1 * x1) + (b2 * x2) + (b3 * x3) + (b4 * x4);
-    const error = targetDinamico - prediccionActual; // ← ya no es siempre 0.85
-
+    const error = targetDinamico - prediccionActual;
     b0 += tasaAprendizaje * error;
     b1 += tasaAprendizaje * error * x1;
     b2 += tasaAprendizaje * error * x2;
@@ -305,65 +298,62 @@ export default function App() {
       
       setCargandoAnalisis(true);
       try {
-        const resultado = await analizarZonaJalisco(municipio, colonia, giro, subGiro);
+        // CONEXIÓN DIRECTA CON TU NUEVO BACKEND EN FLASK (Puerto 5003)
+        const responseFlask = await fetch('http://localhost:5003/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            municipio,
+            colonia,
+            giro,
+            subGiro,
+            poblacion,
+            saturacion,
+            momentum,
+            insatisfaccion,
+            conteoCompetencia: competenciaReal.length
+          })
+        });
+
+        const resultado = await responseFlask.json();
         
         if (resultado && resultado.exito) {
           setReporteISO(resultado);
-          setNegocios(resultado.negociosExistentes || []); 
-          
-          const vars = resultado.variables || {};
-          setPoblacion(Number(vars.X1) || 45000);
-          setSaturacion(Number(vars.X3) || 18);
-          setMomentum(Number(vars.X5) || 90);
-          setMovilidad(Number(vars.X6) || 75);
-          
-          if (vars.X4 && Number(vars.X4) > 0) {
-          const valorCalculado = Math.round((1 / Number(vars.X4)) * 250);
-          setInsatisfaccion(Math.min(valorCalculado, 100));
-          } else {
-          setInsatisfaccion(60);
-        }
-          
-          const potencial = resultado.potencialVenta || "";
-          setEstiloConsumo(potencial.includes("Aspiracional") ? "Aspiracional" : "Necesidad");
+          setEstiloConsumo(resultado.potencialVenta);
         } else {
-          const isoDinamico = Math.floor(Math.random() * (92 - 58) + 58);
-          setReporteISO({
-            iso: isoDinamico,
-            recomendacionSensata: `Establecer punto de venta estratégico en zones de alto tráfico de ${colonia}.`,
-            recomendacionFantasiosa: `Desarrollar canal de delivery exclusivo para conectar con cuadrantes vecinos en ${municipio}.`,
-            diagnostico: `Análisis de entorno urbano óptimo completado para el subgiro ${subGiro}.`,
-            tipoZona: "urbano"
-          });
-          setNegocios([]);
+          // Fallback seguro usando tu capa local en caso de error de red
+          const resultadoLocal = await analizarZonaJalisco(municipio, colonia, giro, subGiro);
+          if (resultadoLocal && resultadoLocal.exito) {
+            setReporteISO(resultadoLocal);
+            setNegocios(resultadoLocal.negociosExistentes || []); 
+            const vars = resultadoLocal.variables || {};
+            setPoblacion(Number(vars.X1) || 45000);
+            setSaturacion(Number(vars.X3) || 18);
+            setMomentum(Number(vars.X5) || 90);
+            if (vars.X4 && Number(vars.X4) > 0) {
+              setInsatisfaccion(Math.min(Math.round((1 / Number(vars.X4)) * 250), 100));
+            }
+          }
         }
       } catch (error) {
-        console.error("Error en el motor predictivo de datos:", error);
+        print("Error conectando al backend de Flask, activando contingencia local.");
       } finally {
         setCargandoAnalisis(false);
       }
     };
 
     ejecutarMotorPredictivo();
-  }, [municipio, colonia, giro, subGiro]); 
+  }, [municipio, colonia, giro, subGiro, poblacion, saturacion, momentum, insatisfaccion]); 
 
   const [isoPredictivoML, setIsoPredictivoML] = useState(77);
 
   useEffect(() => {
     const conteoCompetencia = competenciaReal ? competenciaReal.length : 0;
-    
-    const scoreCalculado = entrenarModeloPredictivoISO(
-      poblacion,
-      momentum,
-      saturacion,
-      insatisfaccion,
-      conteoCompetencia
-    );
-    
+    const scoreCalculado = entrenarModeloPredictivoISO(poblacion, momentum, saturacion, insatisfaccion, conteoCompetencia);
     setIsoPredictivoML(scoreCalculado);
   }, [poblacion, momentum, saturacion, insatisfaccion, competenciaReal]);
 
-  const ISO_VAL = isoPredictivoML;
+  const ISO_VAL = reporteISO?.iso || isoPredictivoML;
 
   const ejecutarAuditoriaIA = async () => {
     if (!municipio || !giro) return;
@@ -387,7 +377,7 @@ export default function App() {
 
       const contextoSupabase = datosMunicipio && datosMunicipio.length > 0 
         ? JSON.stringify(datosMunicipio.slice(0, 10), null, 2)
-        : `No se encontraron registros literales con la clave "${palabraClave}" en Supabase. Se asume densidad competitiva moderada en ${municipio}.`;
+        : `No se encontraron registros de competencia directa en Supabase para el criterio "${palabraClave}".`;
 
       setAnalisisIA("Datos comerciales indexados. Consultando a Ollama local...");
 
@@ -643,7 +633,7 @@ export default function App() {
                     <label className="text-[9px] font-black text-slate-400 uppercase ml-3 tracking-widest">Agresividad Local</label>
                     <div className={`flex gap-2 p-1.5 rounded-2xl border shadow-sm ${darkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white/50 border-teal-100'}`}>
                       {['Baja', 'Normal', 'Alta'].map((lvl) => (
-                        <button key={lvl} type="button" onClick={() => setAgresividad(lvl)} className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase transition-all cursor-pointer ${agresividad === lvl ? 'bg-teal-500 text-white shadow-md' : darkMode ? 'text-slate-500 hover:bg-slate-800' : 'text-slate-400 hover:bg-teal-50'}`}>
+                        <button key={lvl} type="button" onClick={() => setAgresividad(lvl)} className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase transition-all cursor-pointer ${agresividad === lvl ? 'bg-teal-500 text-white shadow-md' : darkMode ? 'text-slate-500 hover:bg-slate-800' : 'text-slate-400 hover:bg-teal-5  0'}`}>
                           {lvl}
                         </button>
                       ))}
@@ -781,7 +771,7 @@ export default function App() {
                         <h2 className={`text-[10px] font-black uppercase tracking-widest italic leading-none ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>Estrategia Prescriptiva</h2>
                       </div>
                       <p className={`text-[11px] leading-relaxed italic relative z-10 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                        Basado en el índice <span className="font-bold text-teal-500">ISO del {ISO_VAL}%</span>, el negocio de <span className="font-bold">{giro}</span> en <span className={darkMode ? 'text-white' : 'text-slate-900'}>{colonia}</span> presents un entorno {ISO_VAL > 65 ? 'favorable para la inversión.' : 'con saturación a considerar.'} 
+                        Basado en el índice <span className="font-bold text-teal-500">ISO del {ISO_VAL}%</span>, el negocio de <span className="font-bold">{giro}</span> en <span className={darkMode ? 'text-white' : 'text-slate-900'}>{colonia}</span> presenta un entorno {ISO_VAL > 65 ? 'favorable para la inversión.' : 'con saturación a considerar.'} 
                         {reporteISO ? ` ${reporteISO.recomendacionSensata}` : ''}
                       </p>
                     </div>
@@ -1137,7 +1127,7 @@ export default function App() {
           
           <Tarjeta3D className="w-full max-w-4xl z-10">
             <div className="bg-teal-900/40 border border-teal-500/50 p-10 rounded-3xl shadow-[0_0_40px_rgba(20,184,166,0.5)] backdrop-blur-md text-center space-y-8">
-            <span className="text-emerald-400 text-[10px] font-black uppercase tracking-[0.3em]">Ventaja Competiva</span>
+            <span className="text-emerald-400 text-[10px] font-black uppercase tracking-[0.3em]">Ventaja Competitiva</span>
               <h2 className="text-4xl md:text-5xl font-black uppercase tracking-tighter leading-none">Minimiza el riesgo de expansión</h2>
               <p className="text-teal-200/60 max-w-xl mx-auto text-xs md:text-sm font-medium leading-relaxed">
                 Obtén reportes ejecutivos automatizados en formato PDF listos para juntas corporativas de expansión comercial o valuación inmobiliaria.
@@ -1231,8 +1221,6 @@ function MetricaInfo({ label, desc, color, darkMode }) {
     </div>
   );
 }
-
-
 
 const MetricCard = ({ label, value, icon, color = '#1e293b' }) => (
   <div style={{ padding: '12px 15px', border: '1px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '15px', backgroundColor: '#fff' }}>
